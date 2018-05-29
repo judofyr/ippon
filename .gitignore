@@ -1,0 +1,11 @@
+# Gems
+/pkg
+/Gemfile.lock
+
+# SimpleCov
+/coverage
+
+# Yard
+/doc
+/.yardoc
+
