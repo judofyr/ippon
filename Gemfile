@@ -15,6 +15,7 @@ group :test do
 
   # Ippon::Migrator
   gem 'sequel'
-  gem 'sqlite3'
+  gem 'sqlite3', platforms: :mri
+  gem 'jdbc-sqlite3', platforms: :jruby
 end
 

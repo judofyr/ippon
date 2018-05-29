@@ -12,6 +12,7 @@ require 'yard'
 task :default => [:test, :"test:docs"]
 
 ENV["COVERAGE"] = "1"
+ENV["JRUBY_OPTS"] = "--debug"
 
 Rake::TestTask.new do
 end

@@ -3,9 +3,17 @@ require_relative 'helper'
 require 'ippon/migrator'
 require 'sequel'
 
+
 class TestMigrator < Minitest::Test
+  begin
+    require 'jdbc/sqlite3'
+    CONNECT_URL = 'jdbc:sqlite::memory:'
+  rescue LoadError
+    CONNECT_URL = 'sqlite:/'
+  end
+
   def setup
-    @db = Sequel.sqlite
+    @db = Sequel.connect(CONNECT_URL)
     @migrator = Ippon::Migrator.new(@db)
   end
 
