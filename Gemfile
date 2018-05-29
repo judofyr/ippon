@@ -12,5 +12,9 @@ group :test do
   # Testing framework
   gem 'minitest'
   gem 'simplecov'
+
+  # Ippon::Migrator
+  gem 'sequel'
+  gem 'sqlite3'
 end
 
