@@ -39,7 +39,7 @@ module Ippon::Validate
   class Schema
     attr_reader :id, :steps
 
-    def initialize(id)
+    def initialize(id = nil)
       @id = id
       @steps = []
     end
@@ -64,6 +64,11 @@ module Ippon::Validate
     def fetch(key = id, props = {})
       props[:key] = id
       add(Steps::Fetch.new(props))
+    end
+
+    def fetch_many(key = id, props = {})
+      props[:key] = id
+      add(Steps::FetchMany.new(props))
     end
 
     def trim(props = {})
@@ -100,6 +105,11 @@ module Ippon::Validate
       props[:fields] = fields
       add(Steps::Form.new(props))
     end
+
+    def for_each(schema, props = {})
+      props[:schema] = schema
+      add(Steps::ForEach.new(props))
+    end
   end
 
   class Step
@@ -134,6 +144,13 @@ module Ippon::Validate
       def transform(obj)
         key = props.fetch(:key)
         obj[key]
+      end
+    end
+
+    class FetchMany < Step
+      def transform(obj)
+        key = props.fetch(:key)
+        obj.many(key)
       end
     end
 
@@ -181,6 +198,25 @@ module Ippon::Validate
     class Match < Step
       def valid?(obj)
         props.fetch(:predicate) === obj
+      end
+    end
+
+    class ForEach < Step
+      def process(result)
+        schema = props.fetch(:schema)
+
+        values = []
+        result.value.each_with_index do |value, idx|
+          item_result = Result.new(value)
+          schema.process(item_result)
+          if item_result.error?
+            result.add_errors_from(item_result, idx)
+            result.halt
+          end
+          values << item_result.value
+        end
+
+        result.value = values
       end
     end
 

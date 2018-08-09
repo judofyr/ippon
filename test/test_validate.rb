@@ -1,6 +1,7 @@
 require_relative 'helper'
 
 require 'ippon/validate'
+require 'ippon/params'
 
 class TestValidate < Minitest::Spec
   include Ippon::Validate
@@ -195,6 +196,26 @@ class TestValidate < Minitest::Spec
 
     result = form.validate({"password" => "123", "password_confirm" => "12"})
     assert result.error?
+  end
+
+  ## Lists
+
+  def test_lists
+    field = Schema.new("nums")
+      .fetch_many
+      .for_each(Schema.new.integer)
+
+    params = Ippon::Params::URLEncoded.new("nums=1&nums=2")
+
+    result = field.validate(params)
+    assert result.success?
+    assert_equal [1, 2], result.value
+
+    params = Ippon::Params::URLEncoded.new("nums=%201&nums=2")
+
+    result = field.validate(params)
+    assert result.error?
+    assert_equal [" 1", 2], result.value
   end
 end
 
