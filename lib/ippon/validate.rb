@@ -137,7 +137,7 @@ module Ippon::Validate
       if valid?(result.value)
         result.value = transform(result.value)
       else
-        result.errors << Error.new(self, [])
+        result.errors << Error.new(self, self.path)
         result.halt
       end
     end
@@ -148,6 +148,10 @@ module Ippon::Validate
 
     def message
       @props[:message] || default_message
+    end
+
+    def path
+      @props[:path] || []
     end
   end
 

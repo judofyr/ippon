@@ -188,7 +188,7 @@ class TestValidate < Minitest::Spec
         password: Schema.new("password").fetch.trim,
         password_confirm: Schema.new("password_confirm").fetch.trim,
       )
-      .match_with { |value|
+      .match_with(path: [:password_confirm]) { |value|
         if value[:password]
           value[:password] == value[:password_confirm]
         else
@@ -204,6 +204,7 @@ class TestValidate < Minitest::Spec
 
     result = form.validate({"password" => "123", "password_confirm" => "12"})
     assert result.error?
+    assert_equal [:password_confirm], result.errors[0].path
   end
 
   ## Lists
