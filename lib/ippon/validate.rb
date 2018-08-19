@@ -34,7 +34,11 @@ module Ippon::Validate
     end
   end
 
-  Error = Struct.new(:step, :path)
+  Error = Struct.new(:step, :path) do
+    def message
+      step.message
+    end
+  end
 
   class Schema
     attr_reader :id, :steps
@@ -137,6 +141,14 @@ module Ippon::Validate
         result.halt
       end
     end
+
+    def default_message
+      "Field contains an error"
+    end
+
+    def message
+      @props[:message] || default_message
+    end
   end
 
   module Steps
@@ -169,6 +181,10 @@ module Ippon::Validate
       def valid?(obj)
         !obj.nil?
       end
+
+      def default_message
+        "Required field cannot be left blank"
+      end
     end
 
     class Optional < Step
@@ -186,6 +202,10 @@ module Ippon::Validate
 
       def transform(obj)
         obj.to_i
+      end
+
+      def default_message
+        "Field can only contain digits"
       end
     end
 

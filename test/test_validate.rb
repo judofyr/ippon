@@ -18,6 +18,9 @@ class TestValidate < Minitest::Spec
 
     result = field.validate({"name" => "   "})
     assert result.error?
+
+    error = result.errors[0]
+    assert_equal "Required field cannot be left blank", error.message
   end
 
   def test_helpers
@@ -106,6 +109,7 @@ class TestValidate < Minitest::Spec
 
     result = process(integer, "  123  ")
     assert result.error?
+    assert_equal "Field can only contain digits", result.errors[0].message
   end
 
   def test_boolean
