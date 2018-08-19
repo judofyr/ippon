@@ -172,6 +172,10 @@ class TestValidate < Minitest::Spec
     )
     assert result.error?
     assert_equal 2, result.errors.size
+
+    err1, err2 = result.errors
+    assert_equal [:name], err1.path
+    assert_equal [:karma], err2.path
   end
 
   def test_form_with_more_steps
@@ -216,6 +220,10 @@ class TestValidate < Minitest::Spec
     result = field.validate(params)
     assert result.error?
     assert_equal [" 1", 2], result.value
+
+    assert_equal 1, result.errors.size
+    error = result.errors[0]
+    assert_equal [0], error.path
   end
 end
 

@@ -29,12 +29,12 @@ module Ippon::Validate
 
     def add_errors_from(result, key)
       result.errors.each do |error|
-        @errors << error
+        @errors << Error.new(error.step, error.path + [key])
       end
     end
   end
 
-  Error = Struct.new(:step)
+  Error = Struct.new(:step, :path)
 
   class Schema
     attr_reader :id, :steps
@@ -133,7 +133,7 @@ module Ippon::Validate
       if valid?(result.value)
         result.value = transform(result.value)
       else
-        result.errors << Error.new(self)
+        result.errors << Error.new(self, [])
         result.halt
       end
     end
@@ -231,7 +231,7 @@ module Ippon::Validate
           field.process(field_result)
           values[key] = field_result.value
           if field_result.error?
-            result.add_errors_from(field_result, field)
+            result.add_errors_from(field_result, key)
             result.halt
           end
         end
