@@ -3,7 +3,7 @@ require 'set'
 
 # Migrator provides a migration system on top of {http://sequel.jeremyevans.net/
 # Sequel}. It should be trivial to add if you're already using Sequel to access
-# your database, but you can also use it to migrate a database your primarily
+# your database, but you can also use it to migrate a database you're primarily
 # accessing through other means.
 #
 # Migrator provides a way to write migrations in a single file (no generators
