@@ -118,39 +118,55 @@ module Ippon::Validate
       @props = props.freeze
     end
 
-    # :nocov:
-    def transform(obj)
-      obj
-    end
-
-    def valid?(obj)
-      true
-    end
-    # :nocov:
-
-    def process(result)
-      if valid?(result.value)
-        result.value = transform(result.value)
-      else
-        result.halt
-        result.add_error(message)
-      end
-      result
-    end
-
     def message
       @props.fetch(:message) { self.class.default_message }
+    end
+
+    def self.transform(&blk)
+      define_method(:process) do |result|
+        result.value = instance_exec(result.value, &blk)
+      end
+    end
+
+    def self.transform_catch(*errors, &blk)
+      define_method(:process) do |result|
+        begin
+          result.value = instance_exec(result.value, &blk)
+        rescue *errors
+          result.halt
+          result.add_error(message)
+        end
+      end
+    end
+
+    def self.validate(&blk)
+      define_method(:process) do |result|
+        is_valid = instance_exec(result.value, &blk)
+        if !is_valid
+          result.halt
+          result.add_error(message)
+        end
+      end
+    end
+
+    def self.halt(&blk)
+      define_method(:process) do |result|
+        should_halt = instance_exec(result.value, &blk)
+        if should_halt
+          result.halt
+        end
+      end
     end
   end
 
   class Field < Step
-    def transform(value)
+    transform do |value|
       value[props.fetch(:key)]
     end
   end
 
   class Trim < Step
-    def transform(value)
+    transform do |value|
       if value
         value = value.strip
         value = nil if value.empty?
@@ -160,7 +176,7 @@ module Ippon::Validate
   end
 
   class Required < Step
-    def valid?(value)
+    validate do |value|
       !value.nil?
     end
 
@@ -170,39 +186,33 @@ module Ippon::Validate
   end
 
   class Optional < Step
-    def process(result)
-      if result.value.nil?
-        result.halt
-      end
+    halt do |value|
+      value.nil?
     end
   end
 
   class Boolean < Step
-    def transform(value)
+    transform do |value|
       !!value
     end
   end
 
   class Integer < Step
-    def valid?(obj)
-      obj =~ /\A[+-]?\d+\z/
+    transform_catch(ArgumentError) do |value|
+      Integer(value)
     end
 
     def self.default_message
       "must be an integer"
     end
-
-    def transform(obj)
-      obj.to_i
-    end
   end
 
   class Match < Step
     def predicate
-      @props.fetch(:predicate)
+      props.fetch(:predicate)
     end
 
-    def valid?(value)
+    validate do |value|
       predicate === value
     end
 
@@ -216,20 +226,18 @@ module Ippon::Validate
       @props.fetch(:handler)
     end
 
-    def process(result)
-      result.value = handler.call(result.value)
+    transform do |value|
+      handler.call(value)
     end
   end
 
   class Halt < Step
     def predicate
-      @props.fetch(:predicate)
+      props.fetch(:predicate)
     end
 
-    def process(result)
-      if predicate === result.value
-        result.halt
-      end
+    halt do |value|
+      predicate === value
     end
   end
 

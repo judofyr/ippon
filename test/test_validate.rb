@@ -107,7 +107,7 @@ class TestValidate < Minitest::Test
     assert_equal -123, integer.validate!("-123")
     assert_equal 123, integer.validate!("+123")
 
-    result = integer.validate("  123  ")
+    result = integer.validate("  12 3  ")
     assert result.error?
     assert_equal "must be an integer", result.errors[0].message
   end
