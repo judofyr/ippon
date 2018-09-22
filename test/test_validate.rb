@@ -101,28 +101,71 @@ class TestValidate < Minitest::Test
   end
 
   def test_integer
-    integer = Integer.new
-
     assert_equal 123, integer.validate!("123")
     assert_equal -123, integer.validate!("-123")
     assert_equal 123, integer.validate!("+123")
 
-    result = integer.validate("  12 3  ")
+    result = integer.validate("  12b3  ")
     assert result.error?
-    assert_equal "must be integer", result.errors[0].message
   end
 
   def test_float
-    float = Float.new
-
     assert_equal 125.0, float.validate!("125.0")
     assert_equal 12.5, float.validate!("12.5")
     assert_equal -12.5, float.validate!("-12.5")
     assert_equal 12.5, float.validate!("+12.5")
 
-    result = float.validate("  12 3  ")
+    result = float.validate("  12b3  ")
     assert result.error?
-    assert_equal "must be float", result.errors[0].message
+  end
+
+  def test_number
+    # Default ignore character
+    assert_equal 1234, Number.new.validate!("12 34")
+
+    result = Number.new.validate("$123")
+    assert result.error?
+
+    # Custom ignore character
+    assert_equal 1234, Number.new(ignore: " $").validate!("$ 1 234")
+
+    # Custom separator
+    value = Number.new(decimal_separator: ",", convert: :rational).validate!("1,5")
+    assert_equal Rational(3, 2), value
+
+    # Integer rounding
+    assert_equal 123, Number.new.validate!("122.5")
+    assert_equal 122, Number.new(convert: :floor).validate!("122.5")
+    assert_equal 123, Number.new(convert: :ceil).validate!("122.2")
+
+    # Rational
+    value = Number.new(convert: :rational).validate!("4.5")
+    assert_instance_of ::Rational, value
+    assert_equal Rational(9, 2), value
+
+    # Float
+    value = Number.new(convert: :float).validate!("4.5")
+    assert_instance_of ::Float, value
+    assert_equal 4.5, value
+
+    # Decimal
+    value = Number.new(convert: :decimal).validate!("4.5")
+    assert_instance_of ::BigDecimal, value
+    assert_equal BigDecimal.new("4.5"), value
+
+    # Scaling
+    value = Number.new(ignore: " $", scaling: 100).validate!("$ 1 234.10")
+    assert_equal 123410, value
+
+    value = Number.new(ignore: " $", scaling: 100).validate!("$ 1 234.105")
+    assert_equal 123411, value
+
+    # Scaling with rounding
+    value = Number.new(ignore: " $", scaling: 100, convert: :floor).validate!("$ 1 234.105")
+    assert_equal 123410, value
+    
+    value = Number.new(ignore: " $", scaling: 100, convert: :ceil).validate!("$ 1 234.101")
+    assert_equal 123411, value
   end
 
   def test_boolean

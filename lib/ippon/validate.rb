@@ -197,23 +197,55 @@ module Ippon::Validate
     end
   end
 
-  class Integer < Step
+  class Number < Step
+    def char_regex(pattern)
+      case pattern
+      when Regexp
+        pattern
+      when String
+        /[#{Regexp.escape(pattern)}]/
+      else
+        raise ArgumentError, "unknown pattern: #{pattern}"
+      end
+    end
+
+    def ignore_regex
+      @ignore_regex ||= char_regex(@props.fetch(:ignore, / /))
+    end
+
     transform_catch(ArgumentError) do |value|
-      Integer(value)
+      value = value.gsub(ignore_regex, "")
+
+      if sep = @props[:decimal_separator]
+        num = Rational(value.sub(sep, "."))
+      else
+        num = Rational(value)
+      end
+
+      if scaling = @props[:scaling]
+        num *= scaling
+      end
+
+      case convert = @props[:convert] || :round
+      when :round
+        num.round
+      when :floor
+        num.floor
+      when :ceil
+        num.ceil
+      when :float
+        num.to_f
+      when :rational
+        num
+      when :decimal
+        BigDecimal.new(num, value.size)
+      else
+        raise ArgumentError, "unknown convert: #{convert.inspect}"
+      end
     end
 
     def self.default_message
-      "must be an integer"
-    end
-  end
-
-  class Float < Step
-    transform_catch(ArgumentError) do |value|
-      Float(value)
-    end
-
-    def self.default_message
-      "must be float"
+      "must be a number"
     end
   end
 
@@ -324,12 +356,16 @@ module Ippon::Validate
       Optional.new(**props)
     end
 
+    def number(**props)
+      Number.new(**props)
+    end
+
     def integer(**props)
-      Integer.new(**props)
+      number(**props)
     end
 
     def float(**props)
-      Float.new(**props)
+      number(convert: :float, **props)
     end
 
     def form(fields)
