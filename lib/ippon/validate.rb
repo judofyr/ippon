@@ -207,6 +207,16 @@ module Ippon::Validate
     end
   end
 
+  class Float < Step
+    transform_catch(ArgumentError) do |value|
+      Float(value)
+    end
+
+    def self.default_message
+      "must be float"
+    end
+  end
+
   class Match < Step
     def predicate
       props.fetch(:predicate)
@@ -316,6 +326,10 @@ module Ippon::Validate
 
     def integer(**props)
       Integer.new(**props)
+    end
+
+    def float(**props)
+      Float.new(**props)
     end
 
     def form(fields)

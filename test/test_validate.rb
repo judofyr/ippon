@@ -109,7 +109,20 @@ class TestValidate < Minitest::Test
 
     result = integer.validate("  12 3  ")
     assert result.error?
-    assert_equal "must be an integer", result.errors[0].message
+    assert_equal "must be integer", result.errors[0].message
+  end
+
+  def test_float
+    float = Float.new
+
+    assert_equal 125.0, float.validate!("125.0")
+    assert_equal 12.5, float.validate!("12.5")
+    assert_equal -12.5, float.validate!("-12.5")
+    assert_equal 12.5, float.validate!("+12.5")
+
+    result = float.validate("  12 3  ")
+    assert result.error?
+    assert_equal "must be float", result.errors[0].message
   end
 
   def test_boolean
