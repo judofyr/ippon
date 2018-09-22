@@ -372,7 +372,7 @@ module Ippon::Validate
       Form.new(fields)
     end
 
-    def halt_if(**props, &blk)
+    def halt(**props, &blk)
       Halt.new(predicate: blk, **props)
     end
 
@@ -380,7 +380,7 @@ module Ippon::Validate
       Match.new(predicate: predicate, **props)
     end
 
-    def match_with(**props, &blk)
+    def validate(**props, &blk)
       match(blk, **props)
     end
 

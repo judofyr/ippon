@@ -41,12 +41,12 @@ class TestValidate < Minitest::Test
     schema = form(a: field("a")) & form(b: field("b"))
     assert_instance_of Merge, schema
 
-    schema = halt_if { |val| val % 2 == 0 }
+    schema = halt { |val| val % 2 == 0 }
     assert_instance_of Halt, schema
   end
 
   def test_unhalt
-    schema = match(1..20).unhalt | match_with { |val| val % 2 == 0 }
+    schema = match(1..20).unhalt | validate { |val| val % 2 == 0 }
 
     result = schema.validate(55)
     assert result.error?
