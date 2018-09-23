@@ -226,7 +226,7 @@ class TestValidate < Minitest::Test
     form = Form.new(
       name: field("name") | trim | required,
       bio: field("bio") | trim,
-      karma: field("karma") | trim | optional | integer,
+      karma: field("karma") | trim | optional | number,
     )
 
     value = form.validate!(
@@ -257,7 +257,7 @@ class TestValidate < Minitest::Test
     )
 
     form2 = form(
-      karma: field("karma") | trim | optional | integer,
+      karma: field("karma") | trim | optional | number,
     )
 
     schema = Merge.new(form1, form2)

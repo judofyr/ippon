@@ -377,10 +377,6 @@ module Ippon::Validate
       Number.new(**props)
     end
 
-    def integer(**props)
-      number(**props)
-    end
-
     def float(**props)
       number(convert: :float, **props)
     end
