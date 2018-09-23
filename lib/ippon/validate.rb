@@ -2,7 +2,11 @@ require 'ippon'
 
 module Ippon::Validate
 
-  Error = Struct.new(:path, :message)
+  Error = Struct.new(:path, :step) do
+    def message
+      step.message
+    end
+  end
 
   class Result
     attr_accessor :value
@@ -44,8 +48,8 @@ module Ippon::Validate
       self
     end
 
-    def add_error(message)
-      @errors << Error.new(@path, message)
+    def add_error(step)
+      @errors << Error.new(@path, step)
       self
     end
 
@@ -119,7 +123,7 @@ module Ippon::Validate
     end
 
     def message
-      @props.fetch(:message) { self.class.default_message }
+      @props.fetch(:message) { default_message }
     end
 
     def self.transform(&blk)
@@ -134,7 +138,7 @@ module Ippon::Validate
           result.value = instance_exec(result.value, &blk)
         rescue *errors
           result.halt
-          result.add_error(message)
+          result.add_error(self)
         end
       end
     end
@@ -180,7 +184,7 @@ module Ippon::Validate
       !value.nil?
     end
 
-    def self.default_message
+    def default_message
       "is required"
     end
   end
@@ -244,7 +248,7 @@ module Ippon::Validate
       end
     end
 
-    def self.default_message
+    def default_message
       "must be a number"
     end
   end
@@ -258,8 +262,8 @@ module Ippon::Validate
       predicate === value
     end
 
-    def self.default_message
-      "must match"
+    def default_message
+      "must match #{predicate}"
     end
   end
 
