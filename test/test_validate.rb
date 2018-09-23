@@ -38,11 +38,12 @@ class TestValidate < Minitest::Test
     schema = field("name") | required
     assert_instance_of Sequence, schema
 
+    schema = optional { |val| val % 2 == 0 }
+    assert_instance_of Optional, schema
+    assert_equal true, schema.predicate === 2
+
     schema = form(a: field("a")) & form(b: field("b"))
     assert_instance_of Merge, schema
-
-    schema = halt { |val| val % 2 == 0 }
-    assert_instance_of Halt, schema
   end
 
   def test_unhalt
@@ -98,6 +99,11 @@ class TestValidate < Minitest::Test
 
     result = optional.validate(nil)
     assert result.halted?
+
+    optional = Optional.new(predicate: proc { |val| val % 2 == 0 })
+    result = optional.validate(6)
+    assert result.halted?
+    assert_nil result.value
   end
 
   def test_integer
@@ -196,22 +202,6 @@ class TestValidate < Minitest::Test
     assert_equal 124, match.validate!(124)
     result = match.validate(125)
     assert result.error?
-  end
-
-  def test_halt
-    obj = Object.new
-    def obj.===(other)
-      (other % 2) == 0
-    end
-    halt = Halt.new(predicate: obj)
-
-    result = halt.validate(12)
-    assert result.valid?
-    assert result.halted?
-
-    result = halt.validate(13)
-    assert result.valid?
-    refute result.halted?
   end
 
   def test_transform

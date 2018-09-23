@@ -148,16 +148,7 @@ module Ippon::Validate
         is_valid = instance_exec(result.value, &blk)
         if !is_valid
           result.halt
-          result.add_error(message)
-        end
-      end
-    end
-
-    def self.halt(&blk)
-      define_method(:process) do |result|
-        should_halt = instance_exec(result.value, &blk)
-        if should_halt
-          result.halt
+          result.add_error(self)
         end
       end
     end
@@ -190,8 +181,15 @@ module Ippon::Validate
   end
 
   class Optional < Step
-    halt do |value|
-      value.nil?
+    def predicate
+      @predicate ||= props.fetch(:predicate) { :nil?.to_proc }
+    end
+
+    def process(result)
+      if predicate === result.value
+        result.value = nil
+        result.halt
+      end
     end
   end
 
@@ -277,16 +275,6 @@ module Ippon::Validate
     end
   end
 
-  class Halt < Step
-    def predicate
-      props.fetch(:predicate)
-    end
-
-    halt do |value|
-      predicate === value
-    end
-  end
-
   class Form < Schema
     attr_reader :fields
 
@@ -356,8 +344,12 @@ module Ippon::Validate
       Required.new(**props)
     end
 
-    def optional(**props)
-      Optional.new(**props)
+    def optional(**props, &blk)
+      if blk
+        Optional.new(predicate: blk, **props)
+      else
+        Optional.new(**props)
+      end
     end
 
     def number(**props)
@@ -374,10 +366,6 @@ module Ippon::Validate
 
     def form(fields)
       Form.new(fields)
-    end
-
-    def halt(**props, &blk)
-      Halt.new(predicate: blk, **props)
     end
 
     def match(predicate, **props)
