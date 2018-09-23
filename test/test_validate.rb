@@ -180,20 +180,20 @@ class TestValidate < Minitest::Test
     assert_equal BigDecimal.new("4.5"), value
 
     # Scaling
-    value = Number.new(ignore: " $", scaling: 100).validate!("$ 1 234.10")
+    value = Number.new(ignore: " $", scale: 100).validate!("$ 1 234.10")
     assert_equal 123410, value
 
-    result = Number.new(ignore: " $", scaling: 100).validate("$ 1 234.105")
+    result = Number.new(ignore: " $", scale: 100).validate("$ 1 234.105")
     assert result.error?
 
     # Scaling with rounding
-    value = Number.new(ignore: " $", scaling: 100, convert: :round).validate!("$ 1 234.105")
+    value = Number.new(ignore: " $", scale: 100, convert: :round).validate!("$ 1 234.105")
     assert_equal 123411, value
 
-    value = Number.new(ignore: " $", scaling: 100, convert: :floor).validate!("$ 1 234.105")
+    value = Number.new(ignore: " $", scale: 100, convert: :floor).validate!("$ 1 234.105")
     assert_equal 123410, value
     
-    value = Number.new(ignore: " $", scaling: 100, convert: :ceil).validate!("$ 1 234.101")
+    value = Number.new(ignore: " $", scale: 100, convert: :ceil).validate!("$ 1 234.101")
     assert_equal 123411, value
   end
 

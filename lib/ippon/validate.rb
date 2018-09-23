@@ -230,8 +230,8 @@ module Ippon::Validate
       @props[:decimal_separator]
     end
 
-    def scaling
-      @props[:scaling]
+    def scale
+      @props[:scale]
     end
 
     def convert
@@ -251,7 +251,7 @@ module Ippon::Validate
         next Error
       end
 
-      if s = scaling
+      if s = scale
         num *= s
       end
 
