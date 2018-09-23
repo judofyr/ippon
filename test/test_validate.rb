@@ -44,6 +44,9 @@ class TestValidate < Minitest::Test
 
     schema = form(a: field("a")) & form(b: field("b"))
     assert_instance_of Merge, schema
+
+    schema = for_each(number)
+    assert_instance_of ForEach, schema
   end
 
   def test_unhalt
@@ -269,6 +272,21 @@ class TestValidate < Minitest::Test
     )
 
     assert_equal({name: "Magnus", bio: "Programmer", karma: 4}, value)
+  end
+
+  def test_for_each
+    schema = ForEach.new(trim | required | number)
+
+    result = schema.validate(["1", "2 2"])
+    assert result.valid?
+    assert_equal [1, 22], result.value
+
+    result = schema.validate(["1", "2b2"])
+    assert result.error?
+    assert_equal [1, "2b2"], result.value
+
+    error = result.errors[0]
+    assert_equal [1], error.path
   end
 end
 

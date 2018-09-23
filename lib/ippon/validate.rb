@@ -352,6 +352,31 @@ module Ippon::Validate
     end
   end
 
+  class ForEach < Schema
+    def initialize(element_schema)
+      @element_schema = element_schema
+    end
+
+    def process(result)
+      results = result.value.each_with_index.map do |element, idx|
+        element_result = result.dup.push_path(idx)
+        element_result.value = element
+        @element_schema.process(element_result)
+        element_result
+      end
+
+      results.each do |element_result|
+        if element_result.halted?
+          result.halt
+        end
+
+        result.add_errors_from(element_result)
+      end
+
+      result.value = results.map(&:value)
+    end
+  end
+
   module Builder
     def field(key, **props)
       Field.new(key: key, **props)
@@ -387,6 +412,10 @@ module Ippon::Validate
 
     def match(predicate, **props)
       Match.new(predicate: predicate, **props)
+    end
+
+    def for_each(schema)
+      ForEach.new(schema)
     end
 
     def validate(**props, &blk)
