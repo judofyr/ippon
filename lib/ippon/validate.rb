@@ -128,17 +128,12 @@ module Ippon::Validate
 
     def self.transform(&blk)
       define_method(:process) do |result|
-        result.value = instance_exec(result.value, &blk)
-      end
-    end
-
-    def self.transform_catch(*errors, &blk)
-      define_method(:process) do |result|
-        begin
-          result.value = instance_exec(result.value, &blk)
-        rescue *errors
+        new_value = instance_exec(result.value, &blk)
+        if Error.equal?(new_value)
           result.halt
           result.add_error(self)
+        else
+          result.value = new_value
         end
       end
     end
@@ -215,13 +210,17 @@ module Ippon::Validate
       @ignore_regex ||= char_regex(@props.fetch(:ignore, / /))
     end
 
-    transform_catch(ArgumentError) do |value|
+    transform do |value|
       value = value.gsub(ignore_regex, "")
 
       if sep = @props[:decimal_separator]
-        num = Rational(value.sub(sep, "."))
-      else
+        value = value.sub(sep, ".")
+      end
+
+      begin
         num = Rational(value)
+      rescue ArgumentError
+        next Error
       end
 
       if scaling = @props[:scaling]
