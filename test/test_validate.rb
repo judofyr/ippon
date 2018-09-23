@@ -106,15 +106,6 @@ class TestValidate < Minitest::Test
     assert_nil result.value
   end
 
-  def test_integer
-    assert_equal 123, integer.validate!("123")
-    assert_equal -123, integer.validate!("-123")
-    assert_equal 123, integer.validate!("+123")
-
-    result = integer.validate("  12b3  ")
-    assert result.error?
-  end
-
   def test_float
     assert_equal 125.0, float.validate!("125.0")
     assert_equal 12.5, float.validate!("12.5")
@@ -139,8 +130,14 @@ class TestValidate < Minitest::Test
     value = Number.new(decimal_separator: ",", convert: :rational).validate!("1,5")
     assert_equal Rational(3, 2), value
 
+    # Fractional
+    result = Number.new.validate("122.5")
+    assert result.error?
+
+    assert_equal 122, Number.new.validate!("122.0")
+
     # Integer rounding
-    assert_equal 123, Number.new.validate!("122.5")
+    assert_equal 123, Number.new(convert: :round).validate!("122.5")
     assert_equal 122, Number.new(convert: :floor).validate!("122.5")
     assert_equal 123, Number.new(convert: :ceil).validate!("122.2")
 
@@ -163,10 +160,13 @@ class TestValidate < Minitest::Test
     value = Number.new(ignore: " $", scaling: 100).validate!("$ 1 234.10")
     assert_equal 123410, value
 
-    value = Number.new(ignore: " $", scaling: 100).validate!("$ 1 234.105")
-    assert_equal 123411, value
+    result = Number.new(ignore: " $", scaling: 100).validate("$ 1 234.105")
+    assert result.error?
 
     # Scaling with rounding
+    value = Number.new(ignore: " $", scaling: 100, convert: :round).validate!("$ 1 234.105")
+    assert_equal 123411, value
+
     value = Number.new(ignore: " $", scaling: 100, convert: :floor).validate!("$ 1 234.105")
     assert_equal 123410, value
     

@@ -223,7 +223,7 @@ module Ippon::Validate
     end
 
     def convert
-      @props.fetch(:convert) { :round }
+      @props.fetch(:convert) { :integer }
     end
 
     transform do |value|
@@ -244,6 +244,12 @@ module Ippon::Validate
       end
 
       case convert
+      when :integer
+        if num.denominator == 1
+          num.numerator
+        else
+          Error
+        end
       when :round
         num.round
       when :floor
