@@ -126,6 +126,11 @@ class TestValidate < Minitest::Test
     # Custom ignore character
     assert_equal 1234, Number.new(ignore: " $").validate!("$ 1 234")
 
+    # Incorrect type of `ignore`
+    assert_raises(ArgumentError) do
+      Number.new(ignore: 123).validate!("123")
+    end
+
     # Custom separator
     value = Number.new(decimal_separator: ",", convert: :rational).validate!("1,5")
     assert_equal Rational(3, 2), value
@@ -133,6 +138,7 @@ class TestValidate < Minitest::Test
     # Fractional
     result = Number.new.validate("122.5")
     assert result.error?
+    assert_equal "must be a number", result.errors[0].message
 
     assert_equal 122, Number.new.validate!("122.0")
 
@@ -140,6 +146,11 @@ class TestValidate < Minitest::Test
     assert_equal 123, Number.new(convert: :round).validate!("122.5")
     assert_equal 122, Number.new(convert: :floor).validate!("122.5")
     assert_equal 123, Number.new(convert: :ceil).validate!("122.2")
+
+    # Unknown `convert`
+    assert_raises(ArgumentError, /flor/) do
+      Number.new(convert: :flor).validate!("122.5")
+    end
 
     # Rational
     value = Number.new(convert: :rational).validate!("4.5")
@@ -190,6 +201,7 @@ class TestValidate < Minitest::Test
     assert_equal 123, match.validate!(123)
     result = match.validate(124)
     assert result.error?
+    assert_equal "must match 123", result.errors[0].message
   end
 
   def test_match_custom
