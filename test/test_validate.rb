@@ -35,6 +35,9 @@ class TestValidate < Minitest::Test
     assert_instance_of Transform, schema
     assert schema.props[:handler]
 
+    schema = boolean
+    assert_instance_of Boolean, schema
+
     schema = field("name") | required
     assert_instance_of Sequence, schema
 
