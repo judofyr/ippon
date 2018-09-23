@@ -150,8 +150,12 @@ module Ippon::Validate
   end
 
   class Field < Step
+    def key
+      @props.fetch(:key)
+    end
+
     transform do |value|
-      value[props.fetch(:key)]
+      value[key]
     end
   end
 
@@ -177,7 +181,7 @@ module Ippon::Validate
 
   class Optional < Step
     def predicate
-      @predicate ||= props.fetch(:predicate) { :nil?.to_proc }
+      @predicate ||= @props.fetch(:predicate) { :nil?.to_proc }
     end
 
     def process(result)
@@ -210,10 +214,22 @@ module Ippon::Validate
       @ignore_regex ||= char_regex(@props.fetch(:ignore, / /))
     end
 
+    def decimal_separator
+      @props[:decimal_separator]
+    end
+
+    def scaling
+      @props[:scaling]
+    end
+
+    def convert
+      @props.fetch(:convert) { :round }
+    end
+
     transform do |value|
       value = value.gsub(ignore_regex, "")
 
-      if sep = @props[:decimal_separator]
+      if sep = decimal_separator
         value = value.sub(sep, ".")
       end
 
@@ -223,11 +239,11 @@ module Ippon::Validate
         next Error
       end
 
-      if scaling = @props[:scaling]
-        num *= scaling
+      if s = scaling
+        num *= s
       end
 
-      case convert = @props[:convert] || :round
+      case convert
       when :round
         num.round
       when :floor
@@ -252,7 +268,7 @@ module Ippon::Validate
 
   class Match < Step
     def predicate
-      props.fetch(:predicate)
+      @props.fetch(:predicate)
     end
 
     validate do |value|
