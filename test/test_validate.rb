@@ -49,6 +49,15 @@ class TestValidate < Minitest::Test
     assert_instance_of ForEach, schema
   end
 
+  def test_validation_error
+    err = assert_raises(ValidationError) do
+      number.validate!("2b2")
+    end
+
+    assert_instance_of Result, err.result
+    assert_equal 1, err.errors.size
+  end
+
   def test_unhalt
     schema = match(1..20).unhalt | validate { |val| val % 2 == 0 }
 

@@ -8,6 +8,18 @@ module Ippon::Validate
     end
   end
 
+  class ValidationError < StandardError
+    attr_reader :result
+
+    def initialize(result)
+      @result = result
+    end
+
+    def errors
+      @result.errors
+    end
+  end
+
   class Result
     attr_accessor :value
     attr_reader :errors, :path
@@ -74,7 +86,7 @@ module Ippon::Validate
 
     def validate!(value)
       result = validate(value)
-      raise if result.error?
+      raise ValidationError.new(result) if result.error?
       result.value
     end
 
