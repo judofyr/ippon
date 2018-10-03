@@ -1,7 +1,9 @@
 if ENV['COVERAGE']
   require 'simplecov'
-  SimpleCov.start
-  SimpleCov.minimum_coverage 100
+  SimpleCov.start do
+    minimum_coverage 100
+    add_filter "/test/"
+  end
 end
 
 require 'minitest/autorun'
