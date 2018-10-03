@@ -412,230 +412,32 @@ module Ippon::Validate
   #   end
   #
   #   result = Schemas::Even.validate(" 1a1")
-  #   result.errors[0].step.class           # => Ippon::Validate::Number
+  #   result.errors[0].step.class           # => Ippon::Validate::Step
+  #   result.errors[0].step.props[:type]    # => :number
   #   result.errors[0].step.props[:custom]  # => 123
   class Step < Schema
     # @return [Hash] Properties for this step.
     attr_reader :props
 
     # @param props [Hash] Properties for this step.
-    def initialize(props = {})
+    def initialize(props = {}, &processor)
       @props = props.freeze
+      @processor = processor
     end
 
     # The error message for this step.
     #
-    # This will return the +:message+ property, failing back to
-    # {.default_message} if it does not exist.
+    # This will return the +:message+ property, failing back to +"must be
+    # valid"+ if it's missing.
     #
     # @return [String] The error message.
     def message
-      @props.fetch(:message) { default_message }
-    end
-
-    # Helper method for defining a {Schema#process} method.
-    # @api private
-    def self.transform(&blk)
-      define_method(:process) do |result|
-        new_value = instance_exec(result.value, &blk)
-        if Error.equal?(new_value)
-          result.halt
-          result.add_error(self)
-        else
-          result.value = new_value
-        end
-      end
-    end
-
-    # Helper method for defining a {Schema#process} method.
-    # @api private
-    def self.validate(&blk)
-      define_method(:process) do |result|
-        is_valid = instance_exec(result.value, &blk)
-        if !is_valid
-          result.halt
-          result.add_error(self)
-        end
-      end
-    end
-
-    # The default error message.
-    # @abstract
-    # @return [String]
-    def default_message
-      # :nocov:
-      raise NotImplementedError
-      # :nocov:
-    end
-  end
-
-  # @see Builder.field
-  class Field < Step
-    # @return the key which will be used to extract the field.
-    def key
-      @props.fetch(:key)
-    end
-
-    transform do |value|
-      value[key]
-    end
-  end
-
-  # @see Builder.trim
-  class Trim < Step
-    transform do |value|
-      if value
-        value = value.strip
-        value = nil if value.empty?
-      end
-      value
-    end
-  end
-
-  # @see Builder.required
-  class Required < Step
-    validate do |value|
-      !value.nil?
-    end
-
-    # @return [String] returns the default message +"is required"+
-    def default_message
-      "is required"
-    end
-  end
-
-  # @see Builder.optional
-  class Optional < Step
-    # @return the +:predicate+ property
-    def predicate
-      @predicate ||= @props.fetch(:predicate) { :nil?.to_proc }
+      @props.fetch(:message, "must be valid")
     end
 
     # Implements the {Schema#process} interface.
     def process(result)
-      if predicate === result.value
-        result.value = nil
-        result.halt
-      end
-    end
-  end
-
-  # @see Builder.boolean
-  class Boolean < Step
-    transform do |value|
-      !!value
-    end
-  end
-
-  # @see Builder.number
-  class Number < Step
-    # @return [String, nil] the +:decimal_separator+ property, defaulting to nil.
-    def decimal_separator
-      @props[:decimal_separator]
-    end
-
-    # @return [Integer, nil] the +:scale+ property, defaulting to nil.
-    def scale
-      @props[:scale]
-    end
-
-    # @return [Symbol] the +:convert+ property, defaulting to +:integer+
-    def convert
-      @props.fetch(:convert) { :integer }
-    end
-
-    transform do |value|
-      value = value.gsub(ignore_regex, "")
-
-      if sep = decimal_separator
-        value = value.sub(sep, ".")
-      end
-
-      begin
-        num = Rational(value)
-      rescue ArgumentError
-        next Error
-      end
-
-      if s = scale
-        num *= s
-      end
-
-      case convert
-      when :integer
-        if num.denominator == 1
-          num.numerator
-        else
-          Error
-        end
-      when :round
-        num.round
-      when :floor
-        num.floor
-      when :ceil
-        num.ceil
-      when :float
-        num.to_f
-      when :rational
-        num
-      when :decimal
-        BigDecimal.new(num, value.size)
-      else
-        raise ArgumentError, "unknown convert: #{convert.inspect}"
-      end
-    end
-
-    # @return [String] returns the default message +"must be a number"+
-    def default_message
-      "must be a number"
-    end
-
-    private
-
-    def char_regex(pattern)
-      case pattern
-      when Regexp
-        pattern
-      when String
-        /[#{Regexp.escape(pattern)}]/
-      else
-        raise ArgumentError, "unknown pattern: #{pattern}"
-      end
-    end
-
-    # @return [Regexp] the regexp used to match characters which will be
-    # ignored.
-    def ignore_regex
-      @ignore_regex ||= char_regex(@props.fetch(:ignore, / /))
-    end
-  end
-
-  # @see Builder.match
-  class Match < Step
-    # @return the +:predicate+ property
-    def predicate
-      @props.fetch(:predicate)
-    end
-
-    validate do |value|
-      predicate === value
-    end
-
-    # @return [String} the default message
-    def default_message
-      "must match #{predicate}"
-    end
-  end
-
-  # @see Builder.transform
-  class Transform < Step
-    # @return the +:handler+ property
-    def handler
-      @props.fetch(:handler)
-    end
-
-    transform do |value|
-      handler.call(value)
+      @processor.call(result)
     end
   end
 
@@ -774,27 +576,42 @@ module Ippon::Validate
     #
     # and thus the input value must respond to +#[]+.
     #
-    # @param key The key which will be extracted.
-    # @return [Field]
+    # @param key The key which will be extracted. This value is stored under
+    #   the +:key+ parameter in the returned {Step#props}.
+    # @option props :type (:field)
+    # @return [Step]
     def field(key, **props)
-      Field.new(key: key, **props)
+      transform(type: :field, key: key, **props) do |value|
+        value[key]
+      end
     end
 
     # The trim schema trims leading and trailing whitespace and then
     # converts the value to nil if it's empty. The input data must
     # either be a String or nil (in which case nothing happens).
     #
-    # @return [Trim]
+    # @option props :type (:trim)
+    # @return [Step]
     def trim(**props)
-      Trim.new(**props)
+      transform(type: :trim, **props) do |value|
+        if value
+          value = value.strip
+          value = nil if value.empty?
+        end
+        value
+      end
     end
 
     # The required schema produces an error if the input value is
     # non-nil.
     #
-    # @return [Required]
+    # @option props :type (:required)
+    # @option props :message ("is required")
+    # @return [Step]
     def required(**props)
-      Required.new(**props)
+      validate(type: :required, message: "is required", **props) do |value|
+        !value.nil?
+      end
     end
 
     # The optional schema halts on +nil+ input values.
@@ -809,12 +626,16 @@ module Ippon::Validate
     #   Halts the execution and sets the value to +nil+ if the block
     #   yields true
     #
-    # @return [Optional]
+    # @option props :type (:optional)
+    # @return [Step]
     def optional(**props, &blk)
-      if blk
-        Optional.new(predicate: blk, **props)
-      else
-        Optional.new(**props)
+      Step.new(type: :optional, **props) do |result|
+        value = result.value
+        should_halt = blk ? blk.call(value) : value.nil?
+        if should_halt
+          result.value = nil
+          result.halt
+        end
       end
     end
 
@@ -879,12 +700,64 @@ module Ippon::Validate
     # @option props [Symbol] :convert (:integer) Technique to convert the final number
     # @option props [Integer] :scale Scaling factor
     # @option props [String] :decimal_separator (".") decimal separator
-    # @return [Number] a schema which parses strings as numbers
+    # @option props [String] :message ("must be a number")
+    # @option props [Symbol] :type (:number)
+    # @return [Step]
     def number(**props)
-      Number.new(**props)
+      transform(type: :number, message: "must be a number", **props) do |value|
+        ignore = props.fetch(:ignore, / /)
+
+        ignore_regex = case ignore
+        when Regexp
+          ignore
+        when String
+          /[#{Regexp.escape(ignore)}]/
+        else
+          raise ArgumentError, "unknown pattern: #{ignore}"
+        end
+
+        value = value.gsub(ignore_regex, "")
+
+        if sep = props[:decimal_separator]
+          value = value.sub(sep, ".")
+        end
+
+        begin
+          num = Rational(value)
+        rescue ArgumentError
+          next Error
+        end
+
+        if scale = props[:scale]
+          num *= scale
+        end
+
+        case convert = props.fetch(:convert, :integer)
+        when :integer
+          if num.denominator == 1
+            num.numerator
+          else
+            Error
+          end
+        when :round
+          num.round
+        when :floor
+          num.floor
+        when :ceil
+          num.ceil
+        when :float
+          num.to_f
+        when :rational
+          num
+        when :decimal
+          BigDecimal.new(num, value.size)
+        else
+          raise ArgumentError, "unknown convert: #{convert.inspect}"
+        end
+      end
     end
 
-    # @return [Number] a number schema with +convert: :float+
+    # @return [Step] a number schema with +convert: :float+
     def float(**props)
       number(convert: :float, **props)
     end
@@ -895,9 +768,12 @@ module Ippon::Validate
     #   boolean.validate!(nil)    # => false
     #   boolean.validate!("123")  # => true
     #
-    # @return [Boolean]
+    # @option props [Symbol] :type (:boolean)
+    # @return [Step]
     def boolean(**props)
-      Boolean.new(**props)
+      transform(type: :boolean, **props) do |value|
+        !!value
+      end
     end
 
     # @return [Form] a form schema
@@ -920,10 +796,15 @@ module Ippon::Validate
     #   # String matches regexp
     #   match(/@/)
     #
-    # @param predicate An object which responds to +===+
-    # @return [Match]
+    # @param predicate An object which responds to +===+. This value is stored
+    #   under the +:predicate+ parameter in the returned {Step#props}.
+    # @option props :type (:match)
+    # @option props :message ("must match #{predicate}")
+    # @return [Step]
     def match(predicate, **props)
-      Match.new(predicate: predicate, **props)
+      validate(type: :match, predicate: predicate, message: "must match #{predicate}", **props) do |value|
+        predicate === value
+      end
     end
 
     # The for-each schema applies the given +schema+ to each element of
@@ -940,14 +821,17 @@ module Ippon::Validate
     #
     #   validate { |num| num.even? }
     #
-    # This is implemented using {.match}, and as such returns instances
-    # of {Match}.
-    #
     # @yield value
     # @yieldreturn Boolean
-    # @return [Match]
+    # @return [Step]
     def validate(**props, &blk)
-      match(blk, **props)
+      step = Step.new(**props) do |result|
+        is_valid = yield result.value
+        if !is_valid
+          result.halt
+          result.add_error(step)
+        end
+      end
     end
 
     # The transform schema yields the value and updates the result with
@@ -956,9 +840,17 @@ module Ippon::Validate
     #   transform { |val| val * 2 }.validate!(2)  # => 4
     #
     # @yield value
-    # @return [Transform]
+    # @return [Step]
     def transform(**props, &blk)
-      Transform.new(handler: blk, **props)
+      step = Step.new(**props) do |result|
+        new_value = yield result.value
+        if Error.equal?(new_value)
+          result.halt
+          result.add_error(step)
+        else
+          result.value = new_value
+        end
+      end
     end
   end
 end
