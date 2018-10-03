@@ -32,21 +32,6 @@ require 'ippon'
 #   result.errors[0].path     # => [:email]
 #   result.errors[0].message  # => "must match /@/"
 #
-# == Available schemas
-#
-# - {Builder.required required} and {Builder.optional optional} for handling nils.
-# - {Schema#| pipe} for combining schemas in order.
-# - {Builder.number number} (and {Builder.float float}) for parsing strings as numbers.
-# - {Builder.boolean boolean} for converting to booleans.
-# - {Builder.match match} for validating with +===+.
-# - {Builder.validate validate} for validating with a block.
-# - {Builder.field field} for fetching a field.
-# - {Builder.transform transform} for arbitrary transformation.
-# - {Builder.form form} for validating multiple values.
-# - {Schema#& merge} for merging two forms.
-# - {Builder.for_each for_each} for validating arrays.
-# - {Schema#unhalt unhalt} for validating multiple errors.
-#
 # == General usage
 #
 # Most validation libraries has a concept of _form_ which
@@ -59,8 +44,8 @@ require 'ippon'
 # well-formed you will end up with a final value that has been correctly
 # parsed and is ready to be used.
 #
-# Everything you saw in the introductory example was an instance of
-# {Schema} and thus you can call {Schema#validate} on any part or
+# Everything you saw in the introductory example was an instance of {Schema} and
+# thus you can call {Schema#validate} (or {Schema#validate!}) on any part or
 # combination:
 #
 #   module Schemas
@@ -81,14 +66,172 @@ require 'ippon'
 #     # => { age: 123 }
 #   end
 #
-# Here we see examples of some common schemas:
+# {Schema#validate} will always return a {Result} object, while
+# {Schema#validate!} will return the output value, but raise a {ValidationError}
+# if an error occurs.
 #
-# 1. {Builder.trim trim} accepts a string and removes leading/trailing
-#    whitespace.
-# 2. The {Schema#| pipe} operator applies two schemas in order. In this
-#    case we _first_ trim, and _then_ we parse it as a number.
-# 3. {Builder.field field} uses +#[]+ to access the field.
-# 4. {Builder.form form} combines multiple schemas to build a Hash.
+# == {Step}: The most basic schema
+#
+# The smallest schema in Ippon::Validate is a {Step} and you create them with
+# the helper methods in {Builder}:
+#
+#   module Schemas
+#     extend Ippon::Validate::Builder
+#
+#     step = number(
+#       convert: :round,
+#       html: { required: true },
+#       message: "must be numerical",
+#     )
+#
+#     step.class           # => Ippon::Validate::Step
+#     step.type            # => :number
+#     step.message         # => "must be numerical"
+#     step.props[:message] # => "must be numerical"
+#     step.props[:html]    # => { required: true }
+#   end
+#
+# Every step is configured with a Hash called {Step#props props}. The purpose is
+# for you to be able to include custom data you need in order to present a
+# reasonable error message or form interface. In the example above we have
+# attached a custom +:html+ prop which we intend to use while rendering the form
+# field in HTML. The +:message+ prop is what decides the error message, and the
+# +:convert+ prop is used by the {Builder.number number} step internally.
+#
+# The most general step methods are {Builder.transform transform} and
+# {Builder.validate validate}. +transform+ changes the value according to the
+# block, while +validate+ will cause an error if the block returns falsey.
+#
+#   module Schemas
+#     extend Ippon::Validate::Builder
+#
+#     is_date = validate { |val| val =~ /^\d{4}-\d{2}-\d{2}$/ }
+#     to_date = transform { |val| Date.parse(val) }
+#   end
+#
+# Instead of +validate+ you will often end up using one of the other helper methods:
+#
+# - {Builder.required required} checks for nil. (We'll cover {Builder.optional
+#   optional} in the next section since it's quite a different beast.)
+# - {Builder.match match} uses the +===+ operator which allows you to easily
+#   match against constants, regexes and classes.
+#
+# And instead of +transform+ you might find these useful:
+#
+# - {Builder.number number} (and {Builder.float float}) for parsing strings as numbers.
+# - {Builder.boolean boolean} for converting to booleans.
+# - {Builder.field field} for fetching a field.
+# - {Builder.trim trim} removes whitespace from the beginning/end and converts
+#   it to nil if it's empty.
+#
+# == Combining schemas
+#
+# You can use the {Schema#| pipe} operator to combine two schemas. The resulting
+# schema will first try to apply the left side, and if it doesn't cause any
+# errors it will apply the right side. This let's you build quite complex
+# validation rules in a straight forward way:
+#
+#   module Schemas
+#     extend Ippon::Validate::Builder
+#
+#     karma = field("karma") | trim | optional | number | match(1..1000)
+#
+#     karma.validate!({"karma" => " 500 "}) # => 500
+#   end
+#
+# A common pattern you will see is the combination of +field+ and +trim+. This
+# will fetch the field from the input value and automatically convert
+# empty-looking fields into +nil+. Assuming your input is from a text field you
+# most likely want to treat empty text as a +nil+ value.
+#
+# == Building forms
+#
+# We can use {Builder.form form} when we want to validate multiple distinct
+# values in one go:
+#
+#   module Schemas
+#     extend Ippon::Validate::Builder
+#
+#     User = form(
+#       name: field("name") | trim | required,
+#       email: field("email") | trim | optional | match(/@/),
+#       karma: field("karma") | trim | optional | number | match(1..1000),
+#     )
+#
+#     User.validate!({"name" => " Magnus ", "karma" => "100"})
+#     # => { name: "Magnus", karma: 100 }
+#   end
+#
+# It's important to know that the keys of the +form+ doesn't dictate anything
+# about the keys in the input data. You must explicitly use +field+ if you want
+# to access a specific field. At first this might seem like unneccesary
+# duplication, but this is a crucical feature in order to decouple the input
+# data from the output data. Often you'll find it useful to be able to rename
+# internal identifiers without breaking the forms, or you'll find that the form
+# data doesn't match perfectly with the internal data model.
+#
+# Here's an example for how you can write a schema which accepts a single string
+# and then splits it up into a title (the first line) and a body (the rest of
+# the text):
+#
+#   module Schemas
+#     extend Ippon::Validate::Builder
+#
+#     Post = form(
+#       title: transform { |val| val[/\A.*/] } | required,
+#       body: transform { |val| val[/\n.*\z/m] } | trim,
+#     )
+#
+#     Post.validate!("Hello")
+#     # => { title: "Hello", body: nil }
+#
+#     Post.validate!("Hello\n\nTesting")
+#     # => { title: "Hello", body: "Testing" }
+#   end
+#
+# This might seem like a contrived example, but the purpose here is to show that no
+# matter how complicated the input data is Ippon::Validate will be able to
+# handle it. The implementation might not look very nice, but you will be able
+# to integrate it into your regular schemas without writing a separate "clean up
+# input" phase.
+#
+# In addition there is the {Schema#& merge} operator for merging two forms. This
+# is useful when the same fields are used in multiple forms, or if the fields
+# available depends on context (e.g. admins might have access to edit more
+# fields).
+#
+#   module Schemas
+#     extend Ippon::Validate::Builder
+#
+#     Basic = form(
+#       username: field("username") | trim | required,
+#     )
+#
+#     Advanced = form(
+#       karma: field("karma") | optional | number,
+#     )
+#
+#     Both = Basic & Advanced
+#   end
+#
+# == Working with lists
+#
+# If your input data is an array you can use {Builder.for_each for_each} to
+# validate every element:
+#
+#   module Schemas
+#     extend Ippon::Validate::Builder
+#
+#     User = form(
+#       username: field("username") | trim | required,
+#     )
+#
+#     Users = for_each(User)
+#
+#     result = Users.validate([{"username" => "a"}, {"username" => "  "}])
+#     result.error?         # => true
+#     result.errors[0].path # => [1, :username]
+#   end
 module Ippon::Validate
 
   # Represents an error which can happen during validation.
@@ -416,10 +559,10 @@ module Ippon::Validate
   #   result.errors[0].step.props[:type]    # => :number
   #   result.errors[0].step.props[:custom]  # => 123
   class Step < Schema
-    # @return [Hash] Properties for this step.
+    # @return [Hash] properties for this step.
     attr_reader :props
 
-    # @param props [Hash] Properties for this step.
+    # @param props [Hash] properties for this step.
     def initialize(props = {}, &processor)
       @props = props.freeze
       @processor = processor
