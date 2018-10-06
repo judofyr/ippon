@@ -137,22 +137,55 @@ require 'ippon'
 # == Combining schemas
 #
 # You can use the {Schema#| pipe} operator to combine two schemas. The resulting
-# schema will first try to apply the left side, and if it doesn't cause any
-# errors it will apply the right side. This let's you build quite complex
-# validation rules in a straight forward way:
+# schema will first try to apply the left-hand side and then apply the
+# right-hand side.  This let's you build quite complex validation rules in a
+# straight forward way:
 #
 #   module Schemas
 #     extend Ippon::Validate::Builder
 #
-#     karma = fetch("karma") | trim | optional | number | match(1..1000)
+#     Karma = fetch("karma") | trim | optional | number | match(1..1000)
 #
-#     karma.validate!({"karma" => " 500 "}) # => 500
+#     Karma.validate!({"karma" => " 500 "}) # => 500
 #   end
 #
 # A common pattern you will see is the combination of +fetch+ and +trim+. This
 # will fetch the field from the input value and automatically convert
 # empty-looking fields into +nil+. Assuming your input is from a text field you
 # most likely want to treat empty text as a +nil+ value.
+#
+# == Halting and +optional+
+#
+# Whenever an error is produced the validation is _halted_. This means that
+# further schemas combined will _not_ be executed. Continuing from the example
+# in the previous section:
+#
+#   result = Schemas::Karma.validate({"karma" => " abc "})
+#   result.error?   # => true
+#   result.halted?  # => true
+#
+#   result.errors.size        # => 1
+#   result.errors[0].message  # => "must be number"
+#
+# Once the {Builder.number number} schema was processed it produced an error and
+# halted the result. Since the result was halted the {Step#| pipe} operator did
+# not apply the right-hand side, +match(1..1000)+. This is good, because there
+# is no number to validate against.
+#
+# {Builder.optional optional} is a schema which, if the value is +nil+, halts
+# without producing an error:
+#
+#   result = Schemas::Karma.validate({"karma" => " "})
+#   result.error?   # => false
+#   result.halted?  # => true
+#
+#   result.value    # => nil
+#
+# Although we might think about +optional+ as having the meaning "this value can
+# be +nil+", it's more precise to think about it as "when the value *is* +nil+,
+# don't touch or validate it any further". +required+ and +optional+ are
+# surprisingly similar with this approach: Both halts the result if the value is
+# +nil+, but +required+ produces an error in addition.
 #
 # == Building forms
 #
@@ -168,9 +201,35 @@ require 'ippon'
 #       karma: fetch("karma") | trim | optional | number | match(1..1000),
 #     )
 #
-#     User.validate!({"name" => " Magnus ", "karma" => "100", "email" => ""})
-#     # => { name: "Magnus", email: nil, karma: 100 }
+#     result = User.validate({
+#       "name" => " Magnus ",
+#       "email" => "",
+#       "karma" => "100",
+#     })
+#
+#     result.value   # =>
+#       {
+#         name: "Magnus",
+#         email: nil,
+#         karma: 100,
+#       }
+#
+#
+#     result = User.validate({
+#       "name" => " Magnus ",
+#       "email" => "bob",
+#       "karma" => "",
+#     })
+#
+#     result.valid?             # => false
+#
+#     result.errors[0].path     # => [:email]
+#     result.errors[0].message  # => "must match /@/"
 #   end
+#
+# A new feature shown here is the {Error#path} property which tells which field
+# of a form the error occured in. This is an array since forms can be nested
+# inside each other.
 #
 # It's important to know that the keys of the +form+ doesn't dictate anything
 # about the keys in the input data. You must explicitly use +fetch+ if you want
@@ -223,6 +282,73 @@ require 'ippon'
 #
 #     Both = Basic & Advanced
 #   end
+#
+# == Partial forms
+#
+# At first the following example might look a bit confusing:
+#
+#   module Schemas
+#     extend Ippon::Validate::Builder
+#
+#     User = form(
+#       name: fetch("name") | trim | required,
+#       email: fetch("email") | trim | optional | match(/@/),
+#       karma: fetch("karma") | trim | optional | number | match(1..1000),
+#     )
+#
+#     result = User.validate({
+#       "name" => " Magnus ",
+#     })
+#
+#     result.error? # => true
+#
+#     result.errors[0].path     # => [:email]
+#     result.errors[0].message  # => "must be present"
+#   end
+#
+# We've marked the +:email+ field as optional, yet it seems to be required by
+# the schema. This is because all fields of a form must be _present_. The
+# {Builder.optional optional} schema allows the value to take a +nil+
+# value, but it must still be present in the input data.
+#
+# When you declare a form with +:name+, +:email+ and +:karma+, you are
+# guaranteed that the output value will _always_ contain +:name+, +:email+ and
+# +:karma+. This is a crucial feature so you can always trust the output data.
+# If you misspell the email field as "emial" you will get a validation error
+# early on instead of the data magically not appearing in the output data (or it
+# being set to +nil+).
+#
+# There are some use-cases where you want to be so strict about the presence of
+# fields. For instance, you might have an endpoint for updating some of the
+# fields of a user. For this case, you can use a {Builder.partial_form
+# partial_form}:
+#
+#   module Schemas
+#     extend Ippon::Validate::Builder
+#
+#     User = partial_form(
+#       name: fetch("name") | trim | required,
+#       email: fetch("email") | trim | optional | match(/@/),
+#       karma: fetch("karma") | trim | optional | number | match(1..1000),
+#     )
+#
+#     result = User.validate({
+#       "name" => " Magnus ",
+#     })
+#
+#     result.valid? # => true
+#     result.value  # => { name: "Magnus" }
+#
+#     result = User.validate({
+#     })
+#
+#     result.valid? # => true
+#     result.value  # => {}
+#   end
+#
+# {Builder.partial_form partial_form} works similar to {Builder.form form}, but
+# if there's a {Builder.fetch fetch} validation error for a field, it will be
+# ignored in the output data.
 #
 # == Working with lists
 #
