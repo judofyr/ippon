@@ -243,6 +243,29 @@ class TestValidate < Minitest::Test
     assert_equal [:karma], err2.path
   end
 
+  def test_partial_form
+    schema = partial_form(
+      name: fetch("name") | trim | required,
+      bio: fetch("bio") | trim,
+      karma: fetch("karma") | trim | optional | number,
+    )
+
+    value = schema.validate!(
+      "bio" => "Programmer  ",
+      "karma" => " 4"
+    )
+
+    assert_equal({bio: "Programmer", karma: 4}, value)
+
+    result = schema.validate(
+      "karma" => " abc"
+    )
+    assert result.error?
+    assert_equal 1, result.errors.size
+
+    assert_equal [:karma], result.errors[0].path
+  end
+
   def test_merge
     form1 = form(
       name: fetch("name") | trim | required,

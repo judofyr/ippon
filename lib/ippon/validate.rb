@@ -608,8 +608,9 @@ module Ippon::Validate
   class Form < Schema
     attr_reader :fields
 
-    def initialize(fields)
+    def initialize(fields, partial: false)
       @fields = fields
+      @partial = partial
     end
 
     # Implements the {Schema#process} interface.
@@ -625,8 +626,12 @@ module Ippon::Validate
 
       # Propgate state:
       results.each do |key, field_result|
-        values[key] = field_result.value
-        result.add_errors_from(field_result)
+        if @partial && field_result.errors.any? { |e| e.step.type == :fetch }
+          # do nothing
+        else
+          values[key] = field_result.value
+          result.add_errors_from(field_result)
+        end
       end
 
       result.value = values
@@ -936,6 +941,11 @@ module Ippon::Validate
     # @return [Form] a form schema
     def form(fields)
       Form.new(fields)
+    end
+
+    # @return [Form] a form schema
+    def partial_form(fields)
+      Form.new(fields, partial: true)
     end
 
     # The match schema produces an error if +predicate === value+
