@@ -6,14 +6,14 @@ class TestValidate < Minitest::Test
   include Ippon::Validate
   include Builder
 
-  def test_basic_field
-    field = field("name") | trim | required
+  def test_basic_fetch
+    fetch = fetch("name") | trim | required
 
-    result = field.validate({"name" => "  Magnus "})
+    result = fetch.validate({"name" => "  Magnus "})
     assert result.success?
     assert_equal "Magnus", result.value
 
-    result = field.validate({"name" => "   "})
+    result = fetch.validate({"name" => "   "})
     assert result.error?
 
     error = result.errors[0]
@@ -22,7 +22,7 @@ class TestValidate < Minitest::Test
   end
 
   def test_helpers
-    schema = form(a: field("a")) & form(b: field("b"))
+    schema = form(a: fetch("a")) & form(b: fetch("b"))
     assert_instance_of Merge, schema
 
     schema = for_each(number)
@@ -56,15 +56,23 @@ class TestValidate < Minitest::Test
     schema.validate!(10)
   end
 
-  def test_field_with_hash
-    schema = field("name")
+  def test_fetch_with_hash
+    schema = fetch("name")
     assert_equal "Magnus", schema.validate!({"name" => "Magnus"})
   end
 
-  def test_field_custom
-    schema = field("name")
+  def test_fetch_failure
+    schema = fetch("name")
+
+    result = schema.validate({})
+    assert result.error?
+    assert_equal :fetch, result.errors[0].step.props[:type]
+  end
+
+  def test_fetch_custom
+    schema = fetch("name")
     obj = Object.new
-    def obj.[](key)
+    def obj.fetch(key)
       key.upcase
     end
 
@@ -209,9 +217,9 @@ class TestValidate < Minitest::Test
 
   def test_form
     form = Form.new(
-      name: field("name") | trim | required,
-      bio: field("bio") | trim,
-      karma: field("karma") | trim | optional | number,
+      name: fetch("name") | trim | required,
+      bio: fetch("bio") | trim,
+      karma: fetch("karma") | trim | optional | number,
     )
 
     value = form.validate!(
@@ -237,12 +245,12 @@ class TestValidate < Minitest::Test
 
   def test_merge
     form1 = form(
-      name: field("name") | trim | required,
-      bio: field("bio") | trim,
+      name: fetch("name") | trim | required,
+      bio: fetch("bio") | trim,
     )
 
     form2 = form(
-      karma: field("karma") | trim | optional | number,
+      karma: fetch("karma") | trim | optional | number,
     )
 
     schema = Merge.new(form1, form2)

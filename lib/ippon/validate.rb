@@ -12,22 +12,32 @@ require 'ippon'
 #     extend Ippon::Validate::Builder
 #
 #     User = form(
-#       name: field("name") | trim | required,
-#       email: field("email") | trim | optional | match(/@/),
-#       karma: field("karma") | trim | optional | number | match(1..1000),
+#       name: fetch("name") | trim | required,
+#       email: fetch("email") | trim | optional | match(/@/),
+#       karma: fetch("karma") | trim | optional | number | match(1..1000),
 #     )
 #   end
 #
 #   # How to use them:
-#   result = Schemas::User.validate({"name" => " Magnus ", "karma" => "100"})
+#   result = Schemas::User.validate({
+#     "name" => " Magnus ",
+#     "email" => "",
+#     "karma" => "100",
+#   })
+#
 #   result.valid?  # => true
 #   result.value   # =>
 #     {
 #       name: "Magnus",
+#       email: nil,
 #       karma: 100,
 #     }
 #
-#   result = Schemas::User.validate({"name" => " Magnus ", "email" => "bob"})
+#   result = Schemas::User.validate({
+#     "name" => " Magnus ",
+#     "email" => "bob",
+#     "karma" => "",
+#   })
 #   result.valid?             # => false
 #   result.errors[0].path     # => [:email]
 #   result.errors[0].message  # => "must match /@/"
@@ -57,11 +67,11 @@ require 'ippon'
 #     (trim | number).validate!("  123 ")
 #     # => 123
 #
-#     (field("age") | number).validate!({"age" => "123"})
+#     (fetch("age") | number).validate!({"age" => "123"})
 #     # => 123
 #
 #     form(
-#       age: field("age") | trim | number
+#       age: fetch("age") | trim | number
 #     ).validate!({"age" => " 123 "})
 #     # => { age: 123 }
 #   end
@@ -120,7 +130,7 @@ require 'ippon'
 #
 # - {Builder.number number} (and {Builder.float float}) for parsing strings as numbers.
 # - {Builder.boolean boolean} for converting to booleans.
-# - {Builder.field field} for fetching a field.
+# - {Builder.fetch fetch} for fetching a field.
 # - {Builder.trim trim} removes whitespace from the beginning/end and converts
 #   it to nil if it's empty.
 #
@@ -134,12 +144,12 @@ require 'ippon'
 #   module Schemas
 #     extend Ippon::Validate::Builder
 #
-#     karma = field("karma") | trim | optional | number | match(1..1000)
+#     karma = fetch("karma") | trim | optional | number | match(1..1000)
 #
 #     karma.validate!({"karma" => " 500 "}) # => 500
 #   end
 #
-# A common pattern you will see is the combination of +field+ and +trim+. This
+# A common pattern you will see is the combination of +fetch+ and +trim+. This
 # will fetch the field from the input value and automatically convert
 # empty-looking fields into +nil+. Assuming your input is from a text field you
 # most likely want to treat empty text as a +nil+ value.
@@ -153,17 +163,17 @@ require 'ippon'
 #     extend Ippon::Validate::Builder
 #
 #     User = form(
-#       name: field("name") | trim | required,
-#       email: field("email") | trim | optional | match(/@/),
-#       karma: field("karma") | trim | optional | number | match(1..1000),
+#       name: fetch("name") | trim | required,
+#       email: fetch("email") | trim | optional | match(/@/),
+#       karma: fetch("karma") | trim | optional | number | match(1..1000),
 #     )
 #
-#     User.validate!({"name" => " Magnus ", "karma" => "100"})
-#     # => { name: "Magnus", karma: 100 }
+#     User.validate!({"name" => " Magnus ", "karma" => "100", "email" => ""})
+#     # => { name: "Magnus", email: nil, karma: 100 }
 #   end
 #
 # It's important to know that the keys of the +form+ doesn't dictate anything
-# about the keys in the input data. You must explicitly use +field+ if you want
+# about the keys in the input data. You must explicitly use +fetch+ if you want
 # to access a specific field. At first this might seem like unneccesary
 # duplication, but this is a crucical feature in order to decouple the input
 # data from the output data. Often you'll find it useful to be able to rename
@@ -204,11 +214,11 @@ require 'ippon'
 #     extend Ippon::Validate::Builder
 #
 #     Basic = form(
-#       username: field("username") | trim | required,
+#       username: fetch("username") | trim | required,
 #     )
 #
 #     Advanced = form(
-#       karma: field("karma") | optional | number,
+#       karma: fetch("karma") | optional | number,
 #     )
 #
 #     Both = Basic & Advanced
@@ -223,7 +233,7 @@ require 'ippon'
 #     extend Ippon::Validate::Builder
 #
 #     User = form(
-#       username: field("username") | trim | required,
+#       username: fetch("username") | trim | required,
 #     )
 #
 #     Users = for_each(User)
@@ -452,11 +462,11 @@ module Ippon::Validate
     #     extend Ippon::Validate::Builder
     #
     #     Basic = form(
-    #       username: field("username") | trim | required,
+    #       username: fetch("username") | trim | required,
     #     )
     #
     #     Advanced = form(
-    #       karma: field("karma") | optional | number,
+    #       karma: fetch("karma") | optional | number,
     #     )
     #
     #     Both = Basic & Advanced
@@ -605,12 +615,7 @@ module Ippon::Validate
 
       # Propgate state:
       results.each do |key, field_result|
-        if field_result.halted?
-          result.halt
-        else
-          values[key] = field_result.value
-        end
-
+        values[key] = field_result.value
         result.add_errors_from(field_result)
       end
 
@@ -644,7 +649,6 @@ module Ippon::Validate
       result.value = {}
       result.value.update(left_result.value) if !left_result.halted?
       result.value.update(right_result.value) if !right_result.halted?
-      result.halt if left_result.halted? || right_result.halted?
       result
     end
   end
@@ -710,22 +714,22 @@ module Ippon::Validate
   module Builder
     module_function
 
-    # The field schema extracts a field (given by +key+) from a value by
-    # using +#[]+.
+    # The fetch schema extracts a field (given by +key+) from a value by
+    # using +#fetch+.
     #
     # This is strictly equivalent to:
     #
-    #   transform { |value| value[key] }
-    #
-    # and thus the input value must respond to +#[]+.
+    #   transform { |value| value.fetch(key) { error_is_produced } }
     #
     # @param key The key which will be extracted. This value is stored under
     #   the +:key+ parameter in the returned {Step#props}.
-    # @option props :type (:field)
+    # @option props :type (:fetch)
+    # @option props :message ("must be present")
     # @return [Step]
-    def field(key, **props)
-      transform(type: :field, key: key, **props) do |value|
-        value[key]
+    def fetch(key, **props, &blk)
+      blk ||= proc { Error }
+      transform(type: :fetch, key: key, message: "must be present", **props) do |value|
+        value.fetch(key, &blk)
       end
     end
 
