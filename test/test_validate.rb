@@ -66,7 +66,7 @@ class TestValidate < Minitest::Test
 
     result = schema.validate({})
     assert result.error?
-    assert_equal :fetch, result.errors[0].step.props[:type]
+    assert_equal :fetch, result.errors[0].step.type
   end
 
   def test_fetch_custom

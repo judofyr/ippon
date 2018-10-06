@@ -588,6 +588,16 @@ module Ippon::Validate
       @props.fetch(:message, "must be valid")
     end
 
+    # The type of this step.
+    #
+    # This will return the +:type+ property, failing back to +nil+ if it's
+    # missing.
+    #
+    # @return [String, nil] The error message.
+    def type
+      @props[:type]
+    end
+
     # Implements the {Schema#process} interface.
     def process(result)
       @processor.call(result)
