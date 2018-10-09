@@ -9,7 +9,11 @@ require 'bundler/gem_tasks'
 require 'rake/testtask'
 require 'yard'
 
-task :default => [:test, :"test:docs"]
+task :default => [:test]
+
+if RUBY_PLATFORM != "java"
+  task :default => "test:docs"
+end
 
 ENV["COVERAGE"] = "1"
 ENV["JRUBY_OPTS"] = "--debug"
