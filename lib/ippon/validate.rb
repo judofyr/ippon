@@ -371,10 +371,7 @@ require 'ippon'
 module Ippon::Validate
 
   # Represents an error which can happen during validation.
-  Error = Struct.new(:path, :step) do
-    # @!attribute [r] path
-    #   @return [Array] the path where the error occured
-
+  StepError = Struct.new(:step) do
     # @!attribute [r] step
     #   @return [Step] the step which caused the error
 
@@ -386,7 +383,51 @@ module Ippon::Validate
     def message
       step.message
     end
+
+    def each_step
+      yield step, []
+      self
+    end
   end
+
+  class FieldsError
+    def initialize(fields)
+      @fields = fields
+    end
+
+    EMPTY = [].freeze
+
+    # Returns the errors for the given key
+    #
+    # @return [Array<FieldsError | StepError>]
+    def errors_for(key)
+      @fields[key] || EMPTY
+    end
+    
+    def each(&blk)
+      @fields.each(&blk)
+    end
+
+    def each_step(&blk)
+      @fields.each do |key, errors|
+        errors.each do |error|
+          error.each_step do |step, path|
+            yield step, [key, *path]
+          end
+        end
+      end
+      self
+    end
+
+    def message
+      @fields.flat_map do |key, errors|
+        errors.map do |error|
+          "#{key}: #{error.message}"
+        end
+      end.join("\n")
+    end
+  end
+
 
   # An exception class which is raised by {Schema#validate!} when a
   # validation error occurs.
@@ -445,16 +486,22 @@ module Ippon::Validate
     # @return [Array<Error>] the errors
     attr_reader :errors
 
-    # @return [Array] the current path
-    # @api private
-    attr_reader :path
-
     # Creates a new Result with the given +value+.
     def initialize(value)
       @value = value
       @is_halted = false
       @errors = []
-      @path = [].freeze
+    end
+
+    def each_step_error(&blk)
+      return enum_for(:each_step_error) if blk.nil?
+      @errors.each do |error|
+        error.each_step(&blk)
+      end
+    end
+
+    def step_errors
+      each_step_error.to_a
     end
 
     # @return [Boolean] true if the result contains any errors.
@@ -490,41 +537,6 @@ module Ippon::Validate
     def unhalt
       @is_halted = false
       self
-    end
-
-    # Push a new element to the {#path}.
-    #
-    # @return [self]
-    # @api private
-    def push_path(key)
-      @path = [*@path, key].freeze
-      self
-    end
-
-    # Add an error from a step.
-    #
-    # @param step [Step]
-    # @return [self]
-    # @api private
-    def add_error(step)
-      @errors << Error.new(@path, step)
-      self
-    end
-
-    # Copy over errors from another result.
-    #
-    # @param result [Result]
-    # @return [self]
-    # @api private
-    def add_errors_from(result)
-      @errors.concat(result.errors)
-      self
-    end
-
-    private
-
-    def initialize_copy(source)
-      @errors = source.errors.dup
     end
   end
 
@@ -742,21 +754,24 @@ module Ippon::Validate
     # Implements the {Schema#process} interface.
     def process(result)
       values = {}
+      errors = nil
 
       # Process all fields:
-      results = @fields.map do |key, field|
-        field_result = result.dup.push_path(key)
+      @fields.each do |key, field|
+        field_result = Result.new(result.value)
         field.process(field_result)
-        [key, field_result]
-      end
 
-      # Propgate state:
-      results.each do |key, field_result|
         if @partial && field_result.errors.any? { |e| e.step.type == :fetch }
           # do nothing
         else
           values[key] = field_result.value
-          result.add_errors_from(field_result)
+          if field_result.error?
+            if errors.nil?
+              errors = {}
+              result.errors << FieldsError.new(errors)
+            end
+            errors[key] = field_result.errors
+          end
         end
       end
 
@@ -778,14 +793,14 @@ module Ippon::Validate
 
     # Implements the {Schema#process} interface.
     def process(result)
-      left_result = result.dup
-      right_result = result.dup
+      left_result = Result.new(result.value)
+      right_result = Result.new(result.value)
 
       @left.process(left_result)
       @right.process(right_result)
 
-      result.add_errors_from(left_result)
-      result.add_errors_from(right_result)
+      result.errors.concat(left_result.errors)
+      result.errors.concat(right_result.errors)
 
       result.value = {}
       result.value.update(left_result.value) if !left_result.halted?
@@ -805,22 +820,29 @@ module Ippon::Validate
 
     # Implements the {Schema#process} interface.
     def process(result)
-      results = result.value.each_with_index.map do |element, idx|
-        element_result = result.dup.push_path(idx)
-        element_result.value = element
-        @element_schema.process(element_result)
-        element_result
-      end
+      new_value = []
+      errors = nil
 
-      results.each do |element_result|
+      result.value.each_with_index.map do |element, idx|
+        element_result = Result.new(element)
+        @element_schema.process(element_result)
+        new_value << element_result.value
+
+        if element_result.error?
+          if errors.nil?
+            errors = {}
+            result.errors << FieldsError.new(errors)
+          end
+
+          errors[idx] = element_result.errors
+        end
+
         if element_result.halted?
           result.halt
         end
-
-        result.add_errors_from(element_result)
       end
 
-      result.value = results.map(&:value)
+      result.value = new_value
     end
   end
 
@@ -868,7 +890,7 @@ module Ippon::Validate
     # @option props :message ("must be present")
     # @return [Step]
     def fetch(key, **props, &blk)
-      blk ||= proc { Error }
+      blk ||= proc { StepError }
       transform(type: :fetch, key: key, message: "must be present", **props) do |value|
         value.fetch(key, &blk)
       end
@@ -1013,7 +1035,7 @@ module Ippon::Validate
         begin
           num = Rational(value)
         rescue ArgumentError
-          next Error
+          next StepError
         end
 
         if scale = props[:scale]
@@ -1025,7 +1047,7 @@ module Ippon::Validate
           if num.denominator == 1
             num.numerator
           else
-            Error
+            StepError
           end
         when :round
           num.round
@@ -1122,7 +1144,7 @@ module Ippon::Validate
         is_valid = yield result.value
         if !is_valid
           result.halt
-          result.add_error(step)
+          result.errors << StepError.new(step)
         end
       end
     end
@@ -1137,9 +1159,9 @@ module Ippon::Validate
     def transform(**props, &blk)
       step = Step.new(**props) do |result|
         new_value = yield result.value
-        if Error.equal?(new_value)
+        if StepError.equal?(new_value)
           result.halt
-          result.add_error(step)
+          result.errors << StepError.new(step)
         else
           result.value = new_value
         end

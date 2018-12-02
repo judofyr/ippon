@@ -16,9 +16,9 @@ class TestValidate < Minitest::Test
     result = fetch.validate({"name" => "   "})
     assert result.error?
 
-    error = result.errors[0]
-    assert_equal [], error.path
-    assert_equal "is required", error.message
+    step, path = result.step_errors[0]
+    assert_equal [], path
+    assert_equal "is required", step.message
   end
 
   def test_helpers
@@ -236,11 +236,11 @@ class TestValidate < Minitest::Test
       "karma" => " abc"
     )
     assert result.error?
-    assert_equal 2, result.errors.size
+    assert_equal 2, result.step_errors.size
 
-    err1, err2 = result.errors
-    assert_equal [:name], err1.path
-    assert_equal [:karma], err2.path
+    err1, err2 = result.step_errors
+    assert_equal [:name], err1[1]
+    assert_equal [:karma], err2[1]
   end
 
   def test_partial_form
@@ -261,9 +261,14 @@ class TestValidate < Minitest::Test
       "karma" => " abc"
     )
     assert result.error?
-    assert_equal 1, result.errors.size
 
-    assert_equal [:karma], result.errors[0].path
+    assert_equal "karma: must be a number", result.errors[0].message
+
+    step_errors = result.step_errors
+    assert_equal 1, step_errors.size
+    step, path = step_errors[0]
+
+    assert_equal [:karma], path
   end
 
   def test_merge
@@ -298,8 +303,41 @@ class TestValidate < Minitest::Test
     assert result.error?
     assert_equal [1, "2b2"], result.value
 
-    error = result.errors[0]
-    assert_equal [1], error.path
+    step, path = result.step_errors[0]
+    assert_equal [1], path
+  end
+
+  def test_inspect_errors
+    form1 = form(
+      name: fetch("name") | trim | required,
+      bio: fetch("bio") | trim,
+    )
+
+    form2 = form(
+      karma: fetch("karma") | trim | optional | number,
+    )
+
+    schema = form1 & form2
+
+    result = schema.validate({"name" => "Magnus"})
+    assert_equal 2, result.step_errors.size
+
+    assert_equal 2, result.errors.size
+
+    err1, err2 = result.errors
+
+    assert_instance_of FieldsError, err1
+    assert_instance_of FieldsError, err2
+
+    assert_equal 0, err1.errors_for(:name).size
+    assert_equal 1, err1.errors_for(:bio).size
+
+    assert_equal "bio: must be present", err1.message
+
+    err1.each do |key, errors|
+      assert_equal :bio, key
+      assert_equal 1, errors.size
+    end
   end
 end
 
