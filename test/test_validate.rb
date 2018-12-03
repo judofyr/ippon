@@ -19,6 +19,8 @@ class TestValidate < Minitest::Test
     step, path = result.step_errors[0]
     assert_equal [], path
     assert_equal "is required", step.message
+
+    assert_equal "is required", result.error_messages[0]
   end
 
   def test_helpers
@@ -262,7 +264,7 @@ class TestValidate < Minitest::Test
     )
     assert result.error?
 
-    assert_equal "karma: must be a number", result.errors[0].message
+    assert_equal "karma: must be a number", result.error_messages[0]
 
     step_errors = result.step_errors
     assert_equal 1, step_errors.size
@@ -326,18 +328,25 @@ class TestValidate < Minitest::Test
 
     err1, err2 = result.errors
 
-    assert_instance_of FieldsError, err1
-    assert_instance_of FieldsError, err2
+    assert_instance_of NestedError, err1
+    assert_instance_of NestedError, err2
 
     assert_equal 0, err1.errors_for(:name).size
     assert_equal 1, err1.errors_for(:bio).size
-
-    assert_equal "bio: must be present", err1.message
 
     err1.each do |key, errors|
       assert_equal :bio, key
       assert_equal 1, errors.size
     end
+  end
+
+  def test_nesteed_errors
+    schema = for_each(form(username: fetch("username")))
+
+    result = schema.validate([{}])
+    assert result.error?
+
+    assert_equal "0.username: must be present", result.error_messages[0]
   end
 end
 

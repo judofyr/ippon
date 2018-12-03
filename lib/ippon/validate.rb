@@ -39,8 +39,7 @@ require 'ippon'
 #     "karma" => "",
 #   })
 #   result.valid?             # => false
-#   result.errors[0].path     # => [:email]
-#   result.errors[0].message  # => "must match /@/"
+#   result.errors[0].message  # => "email: must match /@/"
 #
 # == General usage
 #
@@ -223,13 +222,9 @@ require 'ippon'
 #
 #     result.valid?             # => false
 #
-#     result.errors[0].path     # => [:email]
-#     result.errors[0].message  # => "must match /@/"
+#     result.errors[0].message  # => "email: must match /@/"
 #   end
-#
-# A new feature shown here is the {Error#path} property which tells which field
-# of a form the error occured in. This is an array since forms can be nested
-# inside each other.
+# 
 #
 # It's important to know that the keys of the +form+ doesn't dictate anything
 # about the keys in the input data. You must explicitly use +fetch+ if you want
@@ -302,8 +297,7 @@ require 'ippon'
 #
 #     result.error? # => true
 #
-#     result.errors[0].path     # => [:email]
-#     result.errors[0].message  # => "must be present"
+#     result.errors[0].message  # => "email: must be present"
 #   end
 #
 # We've marked the +:email+ field as optional, yet it seems to be required by
@@ -365,8 +359,8 @@ require 'ippon'
 #     Users = for_each(User)
 #
 #     result = Users.validate([{"username" => "a"}, {"username" => "  "}])
-#     result.error?         # => true
-#     result.errors[0].path # => [1, :username]
+#     result.error?  # => true
+#     result.errors[0].message  # => "1.username: is required"
 #   end
 module Ippon::Validate
 
@@ -384,31 +378,55 @@ module Ippon::Validate
       step.message
     end
 
+    # @yield [step, path] this step, with an empty path
+    # @yieldparam [Step] step
+    # @yieldparam [Array] path
     def each_step
       yield step, []
       self
     end
   end
 
-  class FieldsError
+  # Represents an error which occured in a nested field. For instance, if an
+  # error occured during validating a form or a list, the error object will be
+  # an instance of this class.
+  class NestedError
+    # @param [Hash] fields a mapping from keys to array of errors.
+    #
+    # @api private
     def initialize(fields)
       @fields = fields
     end
 
+    # Empty, frozen array.
+    #
+    # @api private
     EMPTY = [].freeze
 
     # Returns the errors for the given key
     #
-    # @return [Array<FieldsError | StepError>]
+    # @return [Array<NestedError | StepError>]
     def errors_for(key)
       @fields[key] || EMPTY
     end
-    
+
+    # Yields all keys that has errors attached to them.
+    #
+    # @yield [key, error]
+    # @yieldparam Array<NestedError | StepError> error
     def each(&blk)
       @fields.each(&blk)
     end
+    
+    # Yields every step which has produced an error, together with the path
+    # where it happened.
+    #
+    # @yield [step, path]
+    # @yieldparam [Step] step
+    # @yieldparam [Array] path
+    def each_step
+      return enum_for(:each_step) if !block_given?
 
-    def each_step(&blk)
       @fields.each do |key, errors|
         errors.each do |error|
           error.each_step do |step, path|
@@ -417,14 +435,6 @@ module Ippon::Validate
         end
       end
       self
-    end
-
-    def message
-      @fields.flat_map do |key, errors|
-        errors.map do |error|
-          "#{key}: #{error.message}"
-        end
-      end.join("\n")
     end
   end
 
@@ -441,7 +451,7 @@ module Ippon::Validate
 
     # A shortcut for {Result#errors +result.errors+}.
     #
-    # @return [Array<Error>] the errors.
+    # @return [Array<StepError | NestedError>]
     def errors
       @result.errors
     end
@@ -449,10 +459,10 @@ module Ippon::Validate
 
   # Represents a result from a validation ({Schema#validate}).
   #
-  # A result consists of a {#value} and a list of {#errors} (of
-  # {Error}). A result which contains *zero* errors is considered
-  # {#valid?} (or a {#success?}), while a result which has *some* errors
-  # is an {#error?}.
+  # A result consists of a {#value} and a list of {#errors} (of {StepError} or
+  # {NestedError}). A result which contains *zero* errors is considered
+  # {#valid?} (or a {#success?}), while a result which has *some* errors is an
+  # {#error?}.
   #
   # In addition, a result may or may not be {#halted?}. This is used by
   # various schemas (e.g. {Builder.form Form} and {Schema#| Sequence})
@@ -483,7 +493,7 @@ module Ippon::Validate
     # @return the current value
     attr_accessor :value
 
-    # @return [Array<Error>] the errors
+    # @return [Array<StepError | NestedError>] the errors
     attr_reader :errors
 
     # Creates a new Result with the given +value+.
@@ -493,15 +503,36 @@ module Ippon::Validate
       @errors = []
     end
 
+    # Yields every step which has produced an error, together with the path
+    # where it happened.
+    #
+    # @yield [step, path]
+    # @yieldparam [Step] step
+    # @yieldparam [Array] path
+    # @return [self | Enumerator] an enumerator if no block is given.
     def each_step_error(&blk)
       return enum_for(:each_step_error) if blk.nil?
       @errors.each do |error|
         error.each_step(&blk)
       end
+      self
     end
 
+    # Returns a flat array of all steps which has produced an error, together
+    # with the path where it happened.
     def step_errors
       each_step_error.to_a
+    end
+
+    # @return [Array<String>] array of error messages.
+    def error_messages
+      each_step_error.map do |step, path|
+        if path.any?
+          "#{path.join('.')}: #{step.message}"
+        else
+          step.message
+        end
+      end
     end
 
     # @return [Boolean] true if the result contains any errors.
@@ -683,13 +714,13 @@ module Ippon::Validate
   # and transformation on the value (as opposed to just combining other
   # schemas).
   #
-  # Every Step class take a +props+ Hash in their constructor and you
-  # are free to store arbitrary data here. You can later access this data
-  # from the {Error} object (through {Error#step}) and for instance use
-  # it to customize error reporting.
+  # Every Step class take a +props+ Hash in their constructor and you are free
+  # to store arbitrary data here. You can later access this data from the
+  # {StepError} object (through {StepError#step}) and for instance use it to
+  # customize error reporting.
   #
   # The +:message+ property will override the default error message
-  # produced by {Error#message} and {Step#message}.
+  # produced by {StepError#message} and {Step#message}.
   #
   # @example How to access custom properties from the error object
   #   module Schemas
@@ -768,7 +799,7 @@ module Ippon::Validate
           if field_result.error?
             if errors.nil?
               errors = {}
-              result.errors << FieldsError.new(errors)
+              result.errors << NestedError.new(errors)
             end
             errors[key] = field_result.errors
           end
@@ -831,7 +862,7 @@ module Ippon::Validate
         if element_result.error?
           if errors.nil?
             errors = {}
-            result.errors << FieldsError.new(errors)
+            result.errors << NestedError.new(errors)
           end
 
           errors[idx] = element_result.errors
