@@ -3,36 +3,37 @@ require 'uri'
 
 # Tools for working with HTTP form data.
 module Ippon::FormData
-  # A scope where nested fields are represented using a dot as a separator:
+  # A key where nested fields are represented using a dot as a separator:
   #
-  #   root = DotScope.new
-  #   root.expand_name("email")  # => "email"
-  #   address = root.child("address")
-  #   address.expand_name("zip") # => "address.zip"
-  class DotScope
-    # Creates a new DotScope.
-    def initialize(prefix = nil)
-      @prefix = prefix
+  #   root = DotKey.new("user")
+  #   root[:email].to_s # => "user.email"
+  #
+  #   address = root[:address]
+  #   address[:zip].to_s # => "user.address.zip"
+  class DotKey
+    # Creates a new key.
+    def initialize(value = "")
+      @value = value.to_s
     end
 
-    # Expands a field name for this scope.
-    def expand_name(name)
-      if @prefix
-        @prefix + name
+    # Returns the full string representation.
+    def to_s
+      @value
+    end
+
+    # Creates a new subkey with a given name.
+    def [](name)
+      if @value.empty?
+        DotKey.new(name)
       else
-        name
+        DotKey.new("#{@value}.#{name}")
       end
-    end
-
-    # Creates a sub scope with a given name.
-    def child(name)
-      DotScope.new("#{@prefix}#{name}.")
     end
   end
 
   # Represents a URL encoded (application/x-www-form-urlencoded) form.
   class URLEncoded
-    # @params [String] str
+    # @param [String] str
     # @return [URLEncoded] a parsed version of 
     def self.parse(str)
       new(URI.decode_www_form(str))
@@ -45,40 +46,38 @@ module Ippon::FormData
       @pairs = pairs
     end
 
-    # Yields every value for a field in a given scope.
+    # Yields every value for a field.
     #
-    # @param [String] name
-    # @param [Scope | nil] scope
+    # @param [#to_s] name
     # @yield [value] every value
     # @return self
     # @api private
-    def each_for(name, scope = nil)
-      full_name = scope ? scope.expand_name(name) : name
+    def each_for(name)
+      name = name.to_s
       @pairs.each do |k, v|
-        yield v if full_name == k
+        yield v if name == k
       end
       self
     end
 
-    # Finds a field value in a given scope; returning nil if it doesn't exist.
+    # Finds a field value; returning nil if it doesn't exist.
     #
-    # @param [String] name
-    # @param [Scope | nil] scope
+    # @param [#to_s] name
     # @return [String | nil]
-    def [](name, scope = nil)
-      fetch(name, scope) { nil }
+    def [](name)
+      fetch(name) { nil }
     end
 
     # Finds a field value in a given scope; yielding the block if it doesn't
     # exist.
     #
-    # @param [String] name
-    # @param [Scope | nil] scope
+    # @param [#to_s] name
     # @yield if the field doesn't exist.
     # @raise [KeyError] if the field doesn't exist and no block is given.
     # @return [String]
-    def fetch(name, scope = nil)
-      each_for(name, scope) do |value|
+    def fetch(name)
+      name = name.to_s
+      each_for(name) do |value|
         return value
       end
 
@@ -91,12 +90,11 @@ module Ippon::FormData
 
     # Returns all values for a field.
     #
-    # @param [String] name
-    # @param [Scope | nil] scope
+    # @param [#to_s] name
     # @return [Array<String>]
-    def fetch_all(name, scope = nil)
+    def fetch_all(name)
       result = []
-      each_for(name, scope) do |value|
+      each_for(name) do |value|
         result << value
       end
       result

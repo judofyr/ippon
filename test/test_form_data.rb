@@ -23,14 +23,14 @@ class TestFormData < Minitest::Test
     end
   end
 
-  def test_fetch_scope
-    scope = DotScope.new
+  def test_fetch_key
+    root = DotKey.new
 
     form_data = URLEncoded.parse("name=Bob&address.street=Obo")
-    assert_equal "Bob", form_data["name", scope]
+    assert_equal "Bob", form_data[root[:name]]
 
-    address = scope.child("address")
-    assert_equal "Obo", form_data["street", address]
+    address = root[:address]
+    assert_equal "Obo", form_data[address[:street]]
   end
 end
 
