@@ -273,6 +273,19 @@ class TestValidate < Minitest::Test
     assert_equal [:karma], path
   end
 
+  def test_form_process_children
+    name_schema = trim | required
+    age_schema = trim | required | number
+    
+    children = {}
+    children[:name] = name_schema.validate("Bob")
+    children[:age] = age_schema.validate("100 years")
+    result = Result.new({})
+    Form.process_children(result, children)
+    assert result.error?
+    assert_equal "age: must be a number", result.error_messages[0]
+  end
+
   def test_merge
     form1 = form(
       name: fetch("name") | trim | required,

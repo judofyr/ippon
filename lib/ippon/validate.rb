@@ -782,17 +782,45 @@ module Ippon::Validate
       @partial = partial
     end
 
-    # Implements the {Schema#process} interface.
-    def process(result)
-      values = {}
+    # Helper method for processing the results from a form. This method will
+    # iterate over all the +children+ and:
+    #
+    # - If +partial+ is true and the child result failed due to a
+    #   {Builder#fetch}, nothing happens.
+    # - If the child result has any errors, it will be propagated into the
+    #   +result+ as a {NestedError} with the given +key+.
+    # - If the child result is a success, the value will be stored in the result
+    #   object using +result.value[key] = child_value+.
+    #
+    # @example
+    #   module Schemas
+    #     extend Ippon::Validate::Builder
+    #
+    #     name_schema = trim | required
+    #     age_schema = trim | required | number
+    #
+    #     children = {}
+    #     children[:name] = name_schema.validate("Bob")
+    #     children[:age] = age_schema.validate("100 years")
+    #
+    #     result = Result.new({})
+    #     Ippon::Validate::Form.process_children(result, children)
+    #     result.error?         # => true
+    #     result.error_messages # => ["age: must be a number"]
+    #   end
+    #
+    # @param result [Result] A Result object to process
+    # @param children [Enumerable<key, Result>] The children results
+    # @option props [Boolean] :partial Whether to ignore children that could not
+    #   be fetched
+    # @return [Result] The same result as passed in
+    def self.process_children(result, children, partial: false)
+      values = result.value
       errors = nil
 
       # Process all fields:
-      @fields.each do |key, field|
-        field_result = Result.new(result.value)
-        field.process(field_result)
-
-        if @partial && field_result.errors.any? { |e| e.step.type == :fetch }
+      children.each do |key, field_result|
+        if partial && field_result.errors.any? { |e| e.step.type == :fetch }
           # do nothing
         else
           values[key] = field_result.value
@@ -805,8 +833,20 @@ module Ippon::Validate
           end
         end
       end
+      
+      result
+    end
 
-      result.value = values
+    # Implements the {Schema#process} interface.
+    def process(result)
+      children = @fields.map do |key, field|
+        field_result = Result.new(result.value)
+        field.process(field_result)
+        [key, field_result]
+      end
+
+      result.value = {}
+      self.class.process_children(result, children, partial: @partial)
     end
   end
 
