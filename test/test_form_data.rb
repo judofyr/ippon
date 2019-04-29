@@ -32,5 +32,15 @@ class TestFormData < Minitest::Test
     address = root[:address]
     assert_equal "Obo", form_data[address[:street]]
   end
+
+  def test_fetch_bracket_key
+    root = BracketKey.new
+
+    form_data = URLEncoded.parse("name=Bob&address[street]=Obo")
+    assert_equal "Bob", form_data[root[:name]]
+
+    address = root[:address]
+    assert_equal "Obo", form_data[address[:street]]
+  end
 end
 

@@ -31,6 +31,34 @@ module Ippon::FormData
     end
   end
 
+  # A key where nested fields are represented using bracket notation:
+  #
+  #   root = DotKey.new
+  #   root[:email].to_s # => "email"
+  #
+  #   address = root[:address]
+  #   address[:zip].to_s # => "address[zip]"
+  class BracketKey
+    # Creates a new key.
+    def initialize(value = "")
+      @value = value.to_s
+    end
+
+    # Returns the full string representation.
+    def to_s
+      @value
+    end
+
+    # Creates a new subkey with a given name.
+    def [](name)
+      if @value.empty?
+        BracketKey.new(name)
+      else
+        BracketKey.new("#{@value}[#{name}]")
+      end
+    end
+  end
+
   # Represents a URL encoded (application/x-www-form-urlencoded) form.
   class URLEncoded
     # @param [String] str
