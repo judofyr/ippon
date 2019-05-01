@@ -3,18 +3,11 @@
 Ippon is a library of small modules (50 to 500 lines of code) which are useful
 for web development.
 
-Available:
-
-- {Ippon::Migrator}: Migration system built on Sequel.
-
 Under development:
 
+- {Ippon::Migrator}: Migration system built on Sequel.
 - {Ippon::Validate}: Form validation.
 - {Ippon::FormData}: Type-safe interface to form data.
-
-Under consideration:
-
-- {Ippon::Config}: Load configuration from disk and environment variables.
 - {Ippon::Paginator}: Calculates pagination information.
 
 ## Features
