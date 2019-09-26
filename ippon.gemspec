@@ -12,6 +12,6 @@ Gem::Specification.new do |s|
 
   s.require_paths = %w(lib)
   s.files         = Dir["lib/**/*.rb"]
-  s.license       = '0BSD'
+  s.license       = 'BlueOak-1.0.0'
 end
 
