@@ -1,4 +1,5 @@
 require 'ippon'
+require 'bigdecimal'
 
 # Ippon::Validate provides a composable validation system which let's
 # you accept *untrusted* input and process it into *trusted* data.
@@ -1087,7 +1088,7 @@ module Ippon::Validate
         when :rational
           num
         when :decimal
-          BigDecimal.new(num, value.size)
+          BigDecimal(num, value.size)
         else
           raise ArgumentError, "unknown convert: #{convert.inspect}"
         end

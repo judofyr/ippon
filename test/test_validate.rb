@@ -162,7 +162,7 @@ class TestValidate < Minitest::Test
     # Decimal
     value = number(convert: :decimal).validate!("4.5")
     assert_instance_of ::BigDecimal, value
-    assert_equal BigDecimal.new("4.5"), value
+    assert_equal BigDecimal("4.5"), value
 
     # Scaling
     value = number(ignore: " $", scale: 100).validate!("$ 1 234.10")
