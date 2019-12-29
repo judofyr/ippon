@@ -471,6 +471,26 @@ module Ippon::Validate
       @errors = []
     end
 
+    # Adds the state from a nested result:
+    #
+    # - If the +result+ has any errors, it will be addded as a nested error under the given key.
+    # - If the +result+ is halted, this result will be halted as well.
+    #
+    # @param key
+    # @param result [Result]
+    # @return [self]
+    def add_nested(key, result)
+      if result.error?
+        errors << NestedError.new(key, result.errors)
+      end
+
+      if result.halted?
+        halt
+      end
+
+      self
+    end
+
     # Yields every step which has produced an error, together with the path
     # where it happened.
     #
@@ -750,66 +770,21 @@ module Ippon::Validate
       @partial = partial
     end
 
-    # Helper method for processing the results from a form. This method will
-    # iterate over all the +children+ and:
-    #
-    # - If +partial+ is true and the child result failed due to a
-    #   {Builder#fetch}, nothing happens.
-    # - If the child result has any errors, it will be propagated into the
-    #   +result+ as a {NestedError} with the given +key+.
-    # - If the child result is a success, the value will be stored in the result
-    #   object using +result.value[key] = child_value+.
-    #
-    # @example
-    #   module Schemas
-    #     extend Ippon::Validate::Builder
-    #
-    #     name_schema = trim | required
-    #     age_schema = trim | required | number
-    #
-    #     children = {}
-    #     children[:name] = name_schema.validate("Bob")
-    #     children[:age] = age_schema.validate("100 years")
-    #
-    #     result = Result.new({})
-    #     Ippon::Validate::Form.process_children(result, children)
-    #     result.error?         # => true
-    #     result.error_messages # => ["age: must be a number"]
-    #   end
-    #
-    # @param result [Result] A Result object to process
-    # @param children [Enumerable<key, Result>] The children results
-    # @option props [Boolean] :partial Whether to ignore children that could not
-    #   be fetched
-    # @return [Result] The same result as passed in
-    def self.process_children(result, children, partial: false)
-      values = result.value
-
-      # Process all fields:
-      children.each do |key, field_result|
-        if partial && field_result.errors.any? { |e| e.step.type == :fetch }
-          # do nothing
-        else
-          values[key] = field_result.value
-          if field_result.error?
-            result.errors << NestedError.new(key, field_result.errors)
-          end
-        end
-      end
-      
-      result
-    end
-
     # Implements the {Schema#process} interface.
     def process(result)
-      children = @fields.map do |key, field|
-        field_result = Result.new(result.value)
-        field.process(field_result)
-        [key, field_result]
-      end
+      old_value = result.value
+      new_value = result.value = {}
 
-      result.value = {}
-      self.class.process_children(result, children, partial: @partial)
+      @fields.each do |key, field|
+        field_result = Result.new(old_value)
+        field.process(field_result)
+        if @partial && field_result.errors.any? { |e| e.step.type == :fetch }
+          # do nothing
+        else
+          new_value[key] = field_result.value
+          result.add_nested(key, field_result)
+        end
+      end
     end
   end
 
@@ -860,14 +835,7 @@ module Ippon::Validate
         element_result = Result.new(element)
         @element_schema.process(element_result)
         new_value << element_result.value
-
-        if element_result.error?
-          result.errors << NestedError.new(idx, element_result.errors)
-        end
-
-        if element_result.halted?
-          result.halt
-        end
+        result.add_nested(idx, element_result)
       end
 
       result.value = new_value
