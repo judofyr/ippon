@@ -336,21 +336,7 @@ class TestValidate < Minitest::Test
 
     result = schema.validate({"name" => "Magnus"})
     assert_equal 2, result.step_errors.size
-
     assert_equal 2, result.errors.size
-
-    err1, err2 = result.errors
-
-    assert_instance_of NestedError, err1
-    assert_instance_of NestedError, err2
-
-    assert_equal 0, err1.errors_for(:name).size
-    assert_equal 1, err1.errors_for(:bio).size
-
-    err1.each do |key, errors|
-      assert_equal :bio, key
-      assert_equal 1, errors.size
-    end
   end
 
   def test_nesteed_errors

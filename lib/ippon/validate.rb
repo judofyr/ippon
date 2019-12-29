@@ -387,57 +387,24 @@ module Ippon::Validate
     end
   end
 
-  # Represents an error which occured in a nested field. For instance, if an
-  # error occured during validating a form or a list, the error object will be
-  # an instance of this class.
-  class NestedError
-    # @param [Hash] fields a mapping from keys to array of errors.
-    #
-    # @api private
-    def initialize(fields)
-      @fields = fields
-    end
+  # Represents an intermediate error that happened during validation.
+  NestedError = Struct.new(:key, :errors) do
+    # @!attribute [r] key
+    # @!attribute [r] errors
+    #   @return [Array<StepError | NestedError>] the errors for the given key
 
-    # Empty, frozen array.
-    #
-    # @api private
-    EMPTY = [].freeze
-
-    # Returns the errors for the given key
-    #
-    # @return [Array<NestedError | StepError>]
-    def errors_for(key)
-      @fields[key] || EMPTY
-    end
-
-    # Yields all keys that has errors attached to them.
-    #
-    # @yield [key, error]
-    # @yieldparam Array<NestedError | StepError> error
-    def each(&blk)
-      @fields.each(&blk)
-    end
-    
-    # Yields every step which has produced an error, together with the path
-    # where it happened.
-    #
-    # @yield [step, path]
+    # @yield [step, path] this step, with an empty path
     # @yieldparam [Step] step
     # @yieldparam [Array] path
     def each_step
-      return enum_for(:each_step) if !block_given?
-
-      @fields.each do |key, errors|
-        errors.each do |error|
-          error.each_step do |step, path|
-            yield step, [key, *path]
-          end
+      errors.each do |error|
+        error.each_step do |step, path|
+          yield step, [key, *path]
         end
       end
       self
     end
   end
-
 
   # An exception class which is raised by {Schema#validate!} when a
   # validation error occurs.
@@ -816,7 +783,6 @@ module Ippon::Validate
     # @return [Result] The same result as passed in
     def self.process_children(result, children, partial: false)
       values = result.value
-      errors = nil
 
       # Process all fields:
       children.each do |key, field_result|
@@ -825,11 +791,7 @@ module Ippon::Validate
         else
           values[key] = field_result.value
           if field_result.error?
-            if errors.nil?
-              errors = {}
-              result.errors << NestedError.new(errors)
-            end
-            errors[key] = field_result.errors
+            result.errors << NestedError.new(key, field_result.errors)
           end
         end
       end
@@ -892,7 +854,6 @@ module Ippon::Validate
     # Implements the {Schema#process} interface.
     def process(result)
       new_value = []
-      errors = nil
 
       result.value.each_with_index.map do |element, idx|
         element_result = Result.new(element)
@@ -900,12 +861,7 @@ module Ippon::Validate
         new_value << element_result.value
 
         if element_result.error?
-          if errors.nil?
-            errors = {}
-            result.errors << NestedError.new(errors)
-          end
-
-          errors[idx] = element_result.errors
+          result.errors << NestedError.new(idx, element_result.errors)
         end
 
         if element_result.halted?
