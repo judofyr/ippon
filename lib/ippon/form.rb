@@ -35,11 +35,11 @@ module Ippon::Form
     attr_accessor :value
 
     def setup
-      @value = ""
+      @value = nil
     end
 
     def from_input(input)
-      @value = input.fetch(key) { "" }
+      @value = input[key]
     end
 
     def serialize
@@ -156,6 +156,12 @@ module Ippon::Form
     end
 
     include Enumerable
+
+    def each_with_id
+      @entries.each do |id, entry|
+        yield entry, key.to_s, id
+      end
+    end
   end
 
   class Group < Entry

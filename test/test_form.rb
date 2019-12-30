@@ -137,4 +137,17 @@ class TestForm < Minitest::Test
     entry.values << "1"
     assert_equal [["a", "1"], ["a", "1"]], serialize(entry)
   end
+
+  def test_list_with_id
+    entry = List[of: User].new(root_key["users"])
+    user = entry.add
+
+    rows = []
+    entry.each_with_id do |*args|
+      rows << args
+    end
+
+    assert_equal 1, rows.size
+    assert_equal [user, "users", "0"], rows[0]
+  end
 end
