@@ -29,6 +29,16 @@ module Ippon::Form
 
     def setup
     end
+
+    attr_reader :result
+
+    def validate
+      @result ||= _validate
+    end
+
+    def error?
+      defined?(@result) && @result.error?
+    end
   end
 
   class Text < Entry
@@ -46,7 +56,7 @@ module Ippon::Form
       yield key.to_s, @value
     end
 
-    def validate
+    def _validate
       ::Ippon::Validate::Result.new(@value)
     end
   end
@@ -68,7 +78,7 @@ module Ippon::Form
       end
     end
 
-    def validate
+    def _validate
       ::Ippon::Validate::Result.new(@values)
     end
 
@@ -105,7 +115,7 @@ module Ippon::Form
       end
     end
 
-    def validate
+    def _validate
       ::Ippon::Validate::Result.new(@checked)
     end
   end
@@ -133,7 +143,7 @@ module Ippon::Form
       end
     end
 
-    def validate
+    def _validate
       value = []
       result = ::Ippon::Validate::Result.new(value)
       
@@ -199,7 +209,7 @@ module Ippon::Form
     def self.validate(&blk)
       schema = GroupBuilder.instance_eval(&blk)
 
-      define_method(:validate) do
+      define_method(:_validate) do
         schema.validate(self)
       end
     end

@@ -86,8 +86,14 @@ class TestForm < Minitest::Test
     multi = Multi.new(root_key)
     multi.from_input(input("users=0&users.0.name=Bob&users.1.name=Alice&send_email=1"))
 
+    assert_nil multi.result
+    refute multi.error?
+
     result = multi.validate
     assert result.valid?
+
+    refute_nil multi.result
+    refute multi.error?
 
     value = result.value
     assert_equal 1, value[:users].size
