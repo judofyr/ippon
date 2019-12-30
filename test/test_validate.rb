@@ -37,7 +37,7 @@ class TestValidate < Minitest::Test
     end
 
     assert_instance_of Result, err.result
-    assert_equal 1, err.errors.size
+    assert_equal 1, err.errors.steps.size
   end
 
   def test_unhalt
@@ -45,15 +45,15 @@ class TestValidate < Minitest::Test
 
     result = schema.validate(55)
     assert result.error?
-    assert_equal 2, result.errors.size
+    assert_equal 2, result.errors.steps.size
 
     result = schema.validate(54)
     assert result.error?
-    assert_equal 1, result.errors.size
+    assert_equal 1, result.errors.steps.size
 
     result = schema.validate(15)
     assert result.error?
-    assert_equal 1, result.errors.size
+    assert_equal 1, result.errors.steps.size
 
     schema.validate!(10)
   end
@@ -68,7 +68,7 @@ class TestValidate < Minitest::Test
 
     result = schema.validate({})
     assert result.error?
-    assert_equal :fetch, result.errors[0].step.type
+    assert_equal :fetch, result.errors.steps[0].type
   end
 
   def test_fetch_custom
@@ -135,7 +135,7 @@ class TestValidate < Minitest::Test
     # Fractional
     result = number.validate("122.5")
     assert result.error?
-    assert_equal "must be a number", result.errors[0].message
+    assert_equal "must be a number", result.errors.steps[0].message
 
     assert_equal 122, number.validate!("122.0")
 
@@ -196,7 +196,7 @@ class TestValidate < Minitest::Test
     assert_equal 123, schema.validate!(123)
     result = schema.validate(124)
     assert result.error?
-    assert_equal "must match 123", result.errors[0].message
+    assert_equal "must match 123", result.errors.steps[0].message
   end
 
   def test_match_custom
@@ -243,6 +243,9 @@ class TestValidate < Minitest::Test
     err1, err2 = result.step_errors
     assert_equal [:name], err1[1]
     assert_equal [:karma], err2[1]
+
+    assert_equal 1, result.errors[:name].steps.size
+    assert_equal 1, result.errors[:karma].steps.size
   end
 
   def test_partial_form
@@ -323,7 +326,7 @@ class TestValidate < Minitest::Test
 
     result = schema.validate({"name" => "Magnus"})
     assert_equal 2, result.step_errors.size
-    assert_equal 2, result.errors.size
+    assert_equal 0, result.errors.steps.size
   end
 
   def test_nesteed_errors
@@ -333,6 +336,34 @@ class TestValidate < Minitest::Test
     assert result.error?
 
     assert_equal "0.username: must be present", result.error_messages[0]
+  end
+
+  def test_nested_errors
+    err1 = number.validate("abc").errors
+    err2 = number.validate("cde").errors
+    err3 = number.validate("fgh").errors
+
+    err1.add_child(:a, err2)
+    err1.add_child(:a, err3)
+
+    # Check that we have the nested error
+    assert err1[:a]
+
+    # And that we have propagated all of its values
+    assert_equal 2, err1[:a].steps.size
+
+    # Now create a new nested err
+    err4 = number.validate("ijk").errors
+    err5 = number.validate("lmn").errors
+    err6 = number.validate("opq").errors
+    err4.add_child(:a, err5)
+
+    # Merge two errors which has a nested error
+    err6.merge!(err4)
+    err6.merge!(err1)
+
+    assert err6[:a]
+    assert_equal 3, err6[:a].steps.size
   end
 end
 

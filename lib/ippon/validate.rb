@@ -225,7 +225,7 @@ require 'bigdecimal'
 #
 #     result.errors[0].message  # => "email: must match /@/"
 #   end
-# 
+#
 #
 # It's important to know that the keys of the +form+ doesn't dictate anything
 # about the keys in the input data. You must explicitly use +fetch+ if you want
@@ -365,47 +365,108 @@ require 'bigdecimal'
 #   end
 module Ippon::Validate
 
-  # Represents an error which can happen during validation.
-  StepError = Struct.new(:step) do
-    # @!attribute [r] step
-    #   @return [Step] the step which caused the error
+  # Value used to represent that an error has occured.
+  StepError = Object.new.freeze
 
-    # Returns an error message.
-    #
-    # This is produced by {Step#message}.
-    #
-    # @return [String]
-    def message
-      step.message
+  # Stores information about errors.
+  class Errors
+    # @return [Arary<Step>] steps that produced an error
+    attr_reader :steps
+
+    # @return [Hash] child errors
+    # @api private
+    attr_reader :children
+
+    # @return the owner of this object
+    # @api private
+    attr_reader :owner
+
+    # @api private
+    def initialize(owner)
+      @owner = owner
+      @steps = []
+      @children = {}
     end
 
-    # @yield [step, path] this step, with an empty path
-    # @yieldparam [Step] step
-    # @yieldparam [Array] path
-    def each_step
-      yield step, []
+    # Deeply freezes the object.
+    # @api private
+    def deep_freeze
+      @steps.freeze
+      @children.freeze
+      freeze
       self
     end
-  end
 
-  # Represents an intermediate error that happened during validation.
-  NestedError = Struct.new(:key, :errors) do
-    # @!attribute [r] key
-    # @!attribute [r] errors
-    #   @return [Array<StepError | NestedError>] the errors for the given key
+    # @return [Boolean] +true+ if there are no errors.
+    def empty?
+      @steps.empty? && @children.empty?
+    end
 
-    # @yield [step, path] this step, with an empty path
+    # @param key
+    # @return [Errors | nil] a nested error
+    def [](key)
+      @children[key]
+    end
+
+    # Yields all steps (including nested steps) that caused an error.
+    # @yield [step, path]
     # @yieldparam [Step] step
     # @yieldparam [Array] path
-    def each_step
-      errors.each do |error|
-        error.each_step do |step, path|
+    # @return [self | Enumerator] an enumerator if no block is given.
+    def each_step_with_path
+      return enum_for(:each_step_with_path) if !block_given?
+
+      @steps.each do |step|
+        yield step, []
+      end
+
+      @children.each do |key, errors|
+        errors.each_step_with_path do |step, path|
           yield step, [key, *path]
         end
+      end
+    end
+
+    # Adds a step as an error.
+    # @param step [Step]
+    # @api private
+    def add_step(step)
+      @steps << step
+      self
+    end
+
+    # Adds another +Errors+ object as a child error.
+    # @param key
+    # @param other [Errors]
+    # @api private
+    def add_child(key, other)
+      if child = @children[key]
+        if !self.equal?(child.owner)
+          new_child = Errors.new(self)
+          new_child.merge!(child)
+          child = @children[key] = new_child
+        end
+        child.merge!(other)
+      else
+        @children[key] = other
+      end
+      self
+    end
+
+    # Merges another +Errors+ object into this one.
+    # @param other [Errors]
+    # @api private
+    def merge!(other)
+      @steps.concat(other.steps)
+      @children.merge!(other.children) do |_, curr, other|
+        curr.merge!(other)
       end
       self
     end
   end
+
+  # An +Errors+ object which is empty and immutable.
+  EMPTY_ERRORS = Errors.new(Ippon).deep_freeze
 
   # An exception class which is raised by {Schema#validate!} when a
   # validation error occurs.
@@ -468,7 +529,16 @@ module Ippon::Validate
     def initialize(value)
       @value = value
       @is_halted = false
-      @errors = []
+      @errors = EMPTY_ERRORS
+    end
+
+    # @api private
+    def mutable_errors
+      if EMPTY_ERRORS.equal?(@errors)
+        @errors = Errors.new(self)
+      end
+
+      @errors
     end
 
     # Adds the state from a nested result:
@@ -481,7 +551,7 @@ module Ippon::Validate
     # @return [self]
     def add_nested(key, result)
       if result.error?
-        errors << NestedError.new(key, result.errors)
+        mutable_errors.add_child(key, result.errors)
       end
 
       if result.halted?
@@ -500,9 +570,7 @@ module Ippon::Validate
     # @return [self | Enumerator] an enumerator if no block is given.
     def each_step_error(&blk)
       return enum_for(:each_step_error) if blk.nil?
-      @errors.each do |error|
-        error.each_step(&blk)
-      end
+      @errors.each_step_with_path(&blk)
       self
     end
 
@@ -525,7 +593,7 @@ module Ippon::Validate
 
     # @return [Boolean] true if the result contains any errors.
     def error?
-      @errors.any?
+      !@errors.empty?
     end
 
     # @return [Boolean] true if the result contains zero errors.
@@ -778,7 +846,7 @@ module Ippon::Validate
       @fields.each do |key, field|
         field_result = Result.new(old_value)
         field.process(field_result)
-        if @partial && field_result.errors.any? { |e| e.step.type == :fetch }
+        if @partial && field_result.errors.steps.any? { |step| step.type == :fetch }
           # do nothing
         else
           new_value[key] = field_result.value
@@ -808,8 +876,8 @@ module Ippon::Validate
       @left.process(left_result)
       @right.process(right_result)
 
-      result.errors.concat(left_result.errors)
-      result.errors.concat(right_result.errors)
+      result.mutable_errors.merge!(left_result.errors) if left_result.error?
+      result.mutable_errors.merge!(right_result.errors) if right_result.error?
 
       result.value = {}
       result.value.update(left_result.value) if !left_result.halted?
@@ -1140,7 +1208,7 @@ module Ippon::Validate
         is_valid = yield result.value
         if !is_valid
           result.halt
-          result.errors << StepError.new(step)
+          result.mutable_errors.add_step(step)
         end
       end
     end
@@ -1157,7 +1225,7 @@ module Ippon::Validate
         new_value = yield result.value
         if StepError.equal?(new_value)
           result.halt
-          result.errors << StepError.new(step)
+          result.mutable_errors.add_step(step)
         else
           result.value = new_value
         end
