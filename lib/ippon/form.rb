@@ -211,11 +211,14 @@ module Ippon::Form
     end
 
     def self.validate(&blk)
-      schema = GroupBuilder.instance_eval(&blk)
+      options[:validator] = blk
+    end
 
-      define_method(:_validate) do
-        schema.validate(self)
-      end
+    def self.schema
+      return @schema if defined?(@schema)
+
+      blk = options.fetch(:validator)
+      @schema = GroupBuilder.instance_exec(options, &blk)
     end
 
     def setup
@@ -239,6 +242,10 @@ module Ippon::Form
       @entries.each do |entry|
         entry.serialize(&blk)
       end
+    end
+
+    def _validate
+      self.class.schema.validate(self)
     end
   end
 
