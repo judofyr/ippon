@@ -338,32 +338,23 @@ class TestValidate < Minitest::Test
     assert_equal "0.username: must be present", result.error_messages[0]
   end
 
-  def test_nested_errors
-    err1 = number.validate("abc").errors
-    err2 = number.validate("cde").errors
-    err3 = number.validate("fgh").errors
+  def test_merging_errors
+    schema = form(a: required) & form(a: required)
 
-    err1.add_child(:a, err2)
-    err1.add_child(:a, err3)
+    assert_raises(ArgumentError) do
+      schema.validate(nil)
+    end
+  end
 
-    # Check that we have the nested error
-    assert err1[:a]
+  def test_duplicate_add_nested
+    err1 = number.validate("abc")
+    err2 = number.validate("abc")
+    err3 = number.validate("abc")
 
-    # And that we have propagated all of its values
-    assert_equal 2, err1[:a].steps.size
-
-    # Now create a new nested err
-    err4 = number.validate("ijk").errors
-    err5 = number.validate("lmn").errors
-    err6 = number.validate("opq").errors
-    err4.add_child(:a, err5)
-
-    # Merge two errors which has a nested error
-    err6.merge!(err4)
-    err6.merge!(err1)
-
-    assert err6[:a]
-    assert_equal 3, err6[:a].steps.size
+    err1.add_nested(:key, err2)
+    assert_raises(ArgumentError) do
+      err1.add_nested(:key, err3)
+    end
   end
 end
 

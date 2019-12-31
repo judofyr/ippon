@@ -88,6 +88,7 @@ class TestForm < Minitest::Test
 
     assert_nil multi.result
     refute multi.error?
+    assert multi.errors
 
     result = multi.validate
     assert result.valid?

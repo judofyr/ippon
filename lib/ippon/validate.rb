@@ -373,17 +373,12 @@ module Ippon::Validate
     # @return [Arary<Step>] steps that produced an error
     attr_reader :steps
 
-    # @return [Hash] child errors
+    # @return [Hash] child results
     # @api private
     attr_reader :children
 
-    # @return the owner of this object
     # @api private
-    attr_reader :owner
-
-    # @api private
-    def initialize(owner)
-      @owner = owner
+    def initialize
       @steps = []
       @children = {}
     end
@@ -405,7 +400,9 @@ module Ippon::Validate
     # @param key
     # @return [Errors | nil] a nested error
     def [](key)
-      @children[key]
+      if result = @children[key]
+        result.errors
+      end
     end
 
     # Yields all steps (including nested steps) that caused an error.
@@ -420,8 +417,8 @@ module Ippon::Validate
         yield step, []
       end
 
-      @children.each do |key, errors|
-        errors.each_step_with_path do |step, path|
+      @children.each do |key, result|
+        result.errors.each_step_with_path do |step, path|
           yield step, [key, *path]
         end
       end
@@ -439,17 +436,11 @@ module Ippon::Validate
     # @param key
     # @param other [Errors]
     # @api private
-    def add_child(key, other)
-      if child = @children[key]
-        if !self.equal?(child.owner)
-          new_child = Errors.new(self)
-          new_child.merge!(child)
-          child = @children[key] = new_child
-        end
-        child.merge!(other)
-      else
-        @children[key] = other
+    def add_child(key, result)
+      if @children.has_key?(key)
+        raise ArgumentError, "a result with key #{key.inspect} already exists"
       end
+      @children[key] = result
       self
     end
 
@@ -458,15 +449,15 @@ module Ippon::Validate
     # @api private
     def merge!(other)
       @steps.concat(other.steps)
-      @children.merge!(other.children) do |_, curr, other|
-        curr.merge!(other)
+      @children.merge!(other.children) do |key|
+        raise ArgumentError, "duplicate errors for key #{key.inspect}"
       end
       self
     end
   end
 
   # An +Errors+ object which is empty and immutable.
-  EMPTY_ERRORS = Errors.new(Ippon).deep_freeze
+  EMPTY_ERRORS = Errors.new.deep_freeze
 
   # An exception class which is raised by {Schema#validate!} when a
   # validation error occurs.
@@ -535,7 +526,7 @@ module Ippon::Validate
     # @api private
     def mutable_errors
       if EMPTY_ERRORS.equal?(@errors)
-        @errors = Errors.new(self)
+        @errors = Errors.new
       end
 
       @errors
@@ -551,7 +542,7 @@ module Ippon::Validate
     # @return [self]
     def add_nested(key, result)
       if result.error?
-        mutable_errors.add_child(key, result.errors)
+        mutable_errors.add_child(key, result)
       end
 
       if result.halted?
