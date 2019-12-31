@@ -245,9 +245,7 @@ module Ippon::Form
     def field(name)
       ::Ippon::Validate::Step.new do |result|
         entry = result.value.send(name)
-        nested_result = entry.validate
-        result.add_nested(name, nested_result)
-        result.value = nested_result.value
+        entry.validate
       end
     end
   end

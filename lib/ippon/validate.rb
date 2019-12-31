@@ -638,7 +638,6 @@ module Ippon::Validate
     def validate(value)
       result = Result.new(value)
       process(result)
-      result
     end
 
     # Validates the input value and return the output value, raising an
@@ -741,8 +740,9 @@ module Ippon::Validate
 
     # Implements the {Schema#process} interface.
     def process(result)
-      @child.process(result)
+      result = @child.process(result)
       result.unhalt
+      result
     end
   end
 
@@ -760,8 +760,8 @@ module Ippon::Validate
 
     # Implements the {Schema#process} interface.
     def process(result)
-      @left.process(result)
-      return if result.halted?
+      result = @left.process(result)
+      return result if result.halted?
       @right.process(result)
     end
   end
@@ -844,8 +844,7 @@ module Ippon::Validate
       new_value = result.value = {}
 
       @fields.each do |key, field|
-        field_result = Result.new(old_value)
-        field.process(field_result)
+        field_result = field.validate(old_value)
         if @partial && field_result.errors.steps.any? { |step| step.type == :fetch }
           # do nothing
         else
@@ -853,6 +852,8 @@ module Ippon::Validate
           result.add_nested(key, field_result)
         end
       end
+
+      result
     end
   end
 
@@ -870,11 +871,8 @@ module Ippon::Validate
 
     # Implements the {Schema#process} interface.
     def process(result)
-      left_result = Result.new(result.value)
-      right_result = Result.new(result.value)
-
-      @left.process(left_result)
-      @right.process(right_result)
+      left_result = @left.validate(result.value)
+      right_result = @right.validate(result.value)
 
       result.mutable_errors.merge!(left_result.errors) if left_result.error?
       result.mutable_errors.merge!(right_result.errors) if right_result.error?
@@ -900,13 +898,13 @@ module Ippon::Validate
       new_value = []
 
       result.value.each_with_index.map do |element, idx|
-        element_result = Result.new(element)
-        @element_schema.process(element_result)
+        element_result = @element_schema.validate(element)
         new_value << element_result.value
         result.add_nested(idx, element_result)
       end
 
       result.value = new_value
+      result
     end
   end
 
@@ -1010,6 +1008,7 @@ module Ippon::Validate
           result.value = nil
           result.halt
         end
+        result
       end
     end
 
@@ -1210,6 +1209,7 @@ module Ippon::Validate
           result.halt
           result.mutable_errors.add_step(step)
         end
+        result
       end
     end
 
@@ -1229,6 +1229,7 @@ module Ippon::Validate
         else
           result.value = new_value
         end
+        result
       end
     end
   end
