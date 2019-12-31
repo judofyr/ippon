@@ -39,6 +39,10 @@ module Ippon::Form
     def error?
       defined?(@result) && @result.error?
     end
+
+    def errors
+      defined?(@result) ? @result.errors : ::Ippon::Validate::EMPTY_ERRORS
+    end
   end
 
   class Text < Entry
