@@ -2,24 +2,30 @@ require 'ippon'
 require 'ippon/validate'
 
 module Ippon::Form
-  class Entry
-    class << self
-      def options
-        @options ||= {}
+  class Parametric
+    def self.make(klass, &blk)
+      cache = {}
+      klass.class_eval do
+        class << self
+          alias _parametric_new new
+          undef new
+        end
+
+        define_singleton_method(:[]) do |**options|
+          cache[options] ||= Class.new(self) {
+            instance_exec(options, &blk) if blk
+            class << self
+              alias new _parametric_new
+            end
+            self
+          }
+        end
       end
+      nil
     end
+  end
 
-    def self.[](**options)
-      _subclass_cache[options] ||= Class.new(self) {
-        @options = options
-        self
-      }
-    end
-
-    def self._subclass_cache
-      @_subclass_cache ||= {}
-    end
-
+  class Entry
     attr_reader :key
 
     def initialize(key)
@@ -125,8 +131,12 @@ module Ippon::Form
   end
 
   class List < Entry
-    def self.element_class
-      @element_class ||= options.fetch(:of)
+    Parametric.make(self) do |options|
+      @element_class = options.fetch(:of)
+    end
+
+    class << self
+      attr_reader :element_class
     end
 
     def setup
@@ -184,47 +194,50 @@ module Ippon::Form
     TextList = TextList
     Flag = Flag
     List = List
+    Parametric = Parametric
 
-    def self.field_spec
-      if !defined?(@field_spec)
-        raise "#fields not defined"
-      end
-
-      @field_spec
+    def self.fields
+      @fields ||= {}
     end
 
-    def self.fields(field_spec)
-      if defined?(@field_spec)
-        raise "#fields already defined earlier"
+    def self.field(name, klass)
+      if fields.has_key?(name)
+        raise "duplicate field #{name.inspect}"
       end
 
-      @field_spec = field_spec
+      if method_defined?(name)
+        raise "cannot define field #{name.inspect} because it clashes with a method"
+      end
 
-      # Define getters
-      field_spec.each do |name, klass|
-        if method_defined?(name)
-          raise "cannot define field #{name.inspect} because it clashes with a method"
-        end
+      fields[name] = klass
+    end
 
+    def self.finalized_fields
+      finalize
+      fields
+    end
+
+    def self.finalize
+      return if defined?(@finalized)
+      @finalized = true
+      fields.freeze
+      fields.each do |name, klass|
         attr_reader name
       end
+      self
     end
 
     def self.validate(&blk)
-      options[:validator] = blk
-    end
-
-    def self.schema
-      return @schema if defined?(@schema)
-
-      blk = options.fetch(:validator)
-      @schema = GroupBuilder.instance_exec(options, &blk)
+      schema = GroupBuilder.instance_eval(&blk)
+      define_method(:_validate) do
+        schema.validate(self)
+      end
     end
 
     def setup
       @entries = []
 
-      self.class.field_spec.each do |name, klass|
+      self.class.finalized_fields.each do |name, klass|
         ivar = :"@#{name}"
         entry = klass.new(key[name])
         instance_variable_set(ivar, entry)
@@ -245,7 +258,7 @@ module Ippon::Form
     end
 
     def _validate
-      self.class.schema.validate(self)
+      ::Ippon::Validate::Result.new(self)
     end
   end
 

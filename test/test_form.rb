@@ -7,11 +7,9 @@ class TestForm < Minitest::Test
   include Ippon::Form
 
   class User < Group
-    fields(
-      name: Text,
-      skills: TextList,
-      is_good: Flag,
-    )
+    field(:name, Text)
+    field(:skills, TextList)
+    field(:is_good, Flag)
 
     validate do
       form(
@@ -48,31 +46,22 @@ class TestForm < Minitest::Test
 
   def test_doesnt_allow_defining_fields_twice
     klass = Class.new(Group)
-    klass.fields(name: Text)
+    klass.field(:name, Text)
     assert_raises do
-      klass.fields(name: Text)
+      klass.field(:name, Text)
     end
   end
  
   def test_doesnt_allow_overriding_methods
     klass = Class.new(Group)
     assert_raises do
-      klass.fields(to_s: Text)
-    end
-  end
-
-  def test_requires_fields
-    klass = Class.new(Group)
-    assert_raises do
-      klass.new(root_key)
+      klass.field(:to_s, Text)
     end
   end
 
   class Multi < Group
-    fields(
-      users: List[of: User],
-      send_email: Flag,
-    )
+    field(:users, List[of: User])
+    field(:send_email, Flag)
 
     validate do
       form(
@@ -156,5 +145,27 @@ class TestForm < Minitest::Test
 
     assert_equal 1, rows.size
     assert_equal [user, "users", "0"], rows[0]
+  end
+
+  class Setup < Group
+    Parametric.make(self) do |options|
+      field(:name, Text)
+      field(:age, Text) if options[:age]
+    end
+  end
+
+  def test_parametric
+    assert_raises do
+      Setup.new(root_key)
+    end
+
+    entry = Setup[].new(root_key)
+    assert_respond_to entry, :name
+    refute_respond_to entry, :age
+
+    entry = Setup[age: true].new(root_key)
+    assert_respond_to entry, :name
+    assert_respond_to entry, :age
+    assert entry.validate.valid?
   end
 end
