@@ -218,13 +218,13 @@ class TestValidate < Minitest::Test
   end
 
   def test_form
-    form = Form.new(
+    schema = form(
       name: fetch("name") | trim | required,
       bio: fetch("bio") | trim,
       karma: fetch("karma") | trim | optional | number,
     )
 
-    value = form.validate!(
+    value = schema.validate!(
       "name" => "Magnus",
       "bio" => "Programmer  ",
       "karma" => " 4"
@@ -232,7 +232,7 @@ class TestValidate < Minitest::Test
 
     assert_equal({name: "Magnus", bio: "Programmer", karma: 4}, value)
 
-    result = form.validate(
+    result = schema.validate(
       "name" => "  ",
       "bio" => "Programmer  ",
       "karma" => " abc"
@@ -248,32 +248,25 @@ class TestValidate < Minitest::Test
     assert_equal 1, result.errors[:karma].steps.size
   end
 
-  def test_partial_form
-    schema = partial_form(
+  Person = Struct.new(:name, :bio, :karma)
+
+  def test_form_with_attributes
+    schema = form { Person.new }.with_attrs(
       name: fetch("name") | trim | required,
       bio: fetch("bio") | trim,
       karma: fetch("karma") | trim | optional | number,
     )
 
     value = schema.validate!(
+      "name" => "Magnus",
       "bio" => "Programmer  ",
       "karma" => " 4"
     )
 
-    assert_equal({bio: "Programmer", karma: 4}, value)
-
-    result = schema.validate(
-      "karma" => " abc"
-    )
-    assert result.error?
-
-    assert_equal "karma: must be a number", result.error_messages[0]
-
-    step_errors = result.step_errors
-    assert_equal 1, step_errors.size
-    step, path = step_errors[0]
-
-    assert_equal [:karma], path
+    assert_instance_of Person, value
+    assert_equal "Magnus", value.name
+    assert_equal "Programmer", value.bio
+    assert_equal 4, value.karma
   end
 
   def test_merge

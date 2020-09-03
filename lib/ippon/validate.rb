@@ -822,26 +822,44 @@ module Ippon::Validate
 
   # @see Builder.form
   class Form < Schema
-    attr_reader :fields
+    Field = Struct.new(:key, :setter, :schema)
 
-    def initialize(fields, partial: false)
-      @fields = fields
-      @partial = partial
+    def initialize(&blk)
+      @constructor = blk || proc { Hash.new }
+      @fields = []
     end
 
-    # Implements the {Schema#process} interface.
+    def with_key(key, schema)
+      setter = proc { |obj, val| obj[key] = val }
+      @fields << Field.new(key, setter, schema)
+      self
+    end
+
+    def with_keys(hash)
+      hash.each { |key, schema| with_key(key, schema) }
+      self
+    end
+
+    def with_attr(name, schema)
+      setter_method_name = :"#{name}="
+      setter = proc { |obj, val| obj.send(setter_method_name, val) }
+      @fields << Field.new(name, setter, schema)
+      self
+    end
+
+    def with_attrs(hash)
+      hash.each { |name, schema| with_attr(name, schema) }
+      self
+    end
+
     def process(result)
       old_value = result.value
-      new_value = result.value = {}
+      new_value = result.value = @constructor.call
 
-      @fields.each do |key, field|
-        field_result = field.validate(old_value)
-        if @partial && field_result.errors.steps.any? { |step| step.type == :fetch }
-          # do nothing
-        else
-          new_value[key] = field_result.value
-          result.add_nested(key, field_result)
-        end
+      @fields.each do |field|
+        field_result = field.schema.validate(old_value)
+        field.setter.call(new_value, field_result.value)
+        result.add_nested(field.key, field_result)
       end
 
       result
@@ -1141,13 +1159,8 @@ module Ippon::Validate
     end
 
     # @return [Form] a form schema
-    def form(fields)
-      Form.new(fields)
-    end
-
-    # @return [Form] a form schema
-    def partial_form(fields)
-      Form.new(fields, partial: true)
+    def form(fields = {}, &blk)
+      Form.new(&blk).with_keys(fields)
     end
 
     # The match schema produces an error if +predicate === value+
