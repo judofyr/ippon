@@ -1,275 +1,211 @@
-require 'ippon'
 require 'ippon/validate'
 
-module Ippon::Form
-  class Parametric
-    def self.make(klass, &blk)
-      cache = {}
-      klass.class_eval do
-        class << self
-          alias _parametric_new new
-          undef new
-        end
+module Ippon
+  module Form
+    class Field
+      attr_accessor :input, :output, :error
 
-        define_singleton_method(:[]) do |**options|
-          cache[options] ||= Class.new(self) {
-            instance_exec(options, &blk) if blk
-            class << self
-              alias new _parametric_new
-            end
-            self
+      def fill_from_data(data, key)
+        raise NotEmplementedError, "#{self.class} is unable to fill from data"
+      end
+
+      def each_param(key)
+        yield key, @input
+      end
+    end
+
+    class StringField < Field
+      def initialize
+        @input = ""
+      end
+
+      def input=(val)
+        @input = val.to_s
+      end
+
+      def fill_from_data(data, key)
+        @input = data.fetch(key) { "" }
+        self
+      end
+    end
+
+    class StringsField < Field
+      def initialize
+        @input = []
+      end
+
+      def fill_from_data(data, key)
+        @input = data.fetch_all(key)
+        self
+      end
+
+      def each_param(key)
+        @input.each do |val|
+          yield key, val
+        end
+      end
+    end
+
+    class BooleanField < Field
+      def initialize
+        @input = false
+      end
+
+      def fill_from_data(data, key)
+        @input = !!data[key]
+        self
+      end
+    end
+
+    class HashField < Field    
+      def initialize
+        @input = {}
+      end
+
+      def [](key)
+        @input[key]
+      end
+
+      def []=(key, field)
+        @input[key] = field
+      end
+
+      def get(key, klass)
+        if field = @input[key]
+          raise TypeError, "#{key.inspect} is already of class #{field.class}" if !field.is_a?(klass)
+          field
+        else
+          @input[key] = klass.new
+        end
+      end
+
+      def fill_output_from_children
+        @output = {}
+        input.each do |child_key, child_field|
+          @output[child_key] = child_field.output
+        end
+        self
+      end
+
+      [
+        [:string, StringField],
+        [:strings, StringsField],
+        [:boolean, BooleanField],
+        [:hash, HashField],
+      ].each do |name, klass|
+        define_method(name) { |key| get(key, klass) }
+      end
+
+      def each_param(key, &blk)
+        @input.each do |child_key, child_field|
+          child_field.each_param(key[child_key], &blk)
+        end
+      end
+    end
+
+    class FormBuilder
+      def initialize(schema_builder:)
+        @schema_builder = schema_builder
+        @pre_steps = []
+        @post_steps = []
+      end
+
+      [:string, :strings, :boolean].each do |type|
+        define_method(type) do |name, &blk|
+          schema = blk.call(@schema_builder) if blk
+          @pre_steps << proc { |field, form_processor|
+            form_processor.fill(field.send(type, name), from: name, schema: schema)
           }
+          self
         end
       end
-      nil
-    end
-  end
 
-  class Entry
-    attr_reader :key
+      def nested(name, &blk)
+        raise ArgumentError, "block required" if !blk
 
-    def initialize(key)
-      @key = key
-      setup
-    end
+        @pre_steps << proc { |field, form_processor|
+          blk.call(field.hash(name))
+        }
+      end
 
-    def setup
-    end
+      def output(&blk)
+        raise ArgumentError, "block required" if !blk
 
-    attr_reader :result
+        schema = blk.call(@schema_builder)
+        @post_steps << proc { |field, form_processor|
+          form_processor.validate(field, schema)
+        }
+        self
+      end
 
-    def validate
-      @result ||= _validate
-    end
+      def process(field, form_processor)
+        @pre_steps.each do |step|
+          step.call(field, form_processor)
+        end
 
-    def error?
-      defined?(@result) && @result.error?
-    end
+        return if !form_processor.valid?
 
-    def errors
-      defined?(@result) ? @result.errors : ::Ippon::Validate::EMPTY_ERRORS
-    end
-  end
+        field.fill_output_from_children
 
-  class Text < Entry
-    attr_accessor :value
-
-    def setup
-      @value = nil
-    end
-
-    def from_input(input)
-      @value = input[key]
-    end
-
-    def serialize
-      yield key.to_s, @value
-    end
-
-    def _validate
-      ::Ippon::Validate::Result.new(@value)
-    end
-  end
-
-  class TextList < Entry
-    attr_accessor :values
-
-    def setup
-      @values = []
-    end
-
-    def from_input(input)
-      @values = input.fetch_all(key)
-    end
-
-    def serialize
-      @values.each do |value|
-        yield key.to_s, value
+        @post_steps.each do |step|
+          step.call(field, form_processor)
+        end
       end
     end
 
-    def _validate
-      ::Ippon::Validate::Result.new(@values)
-    end
-
-    def each(&blk)
-      @values.each(&blk)
-    end
-
-    include Enumerable
-  end
-
-  class Flag < Entry
-    attr_writer :checked
-
-    def setup
-      @checked = nil
-    end
-
-    def checked?
-      @checked
-    end
-
-    def from_input(input)
-      if value = input[key]
-        @checked = (value == "1")
-      end
-    end
-
-    def serialize
-      case @checked
-      when true
-        yield key.to_s, "1"
-      when false
-        yield key.to_s, "0"
-      end
-    end
-
-    def _validate
-      ::Ippon::Validate::Result.new(@checked)
-    end
-  end
-
-  class List < Entry
-    Parametric.make(self) do |options|
-      @element_class = options.fetch(:of)
-    end
-
-    class << self
-      attr_reader :element_class
-    end
-
-    def setup
-      @entries = {}
-    end
-
-    def from_input(input)
-      input.each_for(key) do |id|
-        entry = add(id)
-        entry.from_input(input)
-      end
-    end
-
-    def serialize(&blk)
-      @entries.each do |name, entry|
-        yield key.to_s, name
-        entry.serialize(&blk)
-      end
-    end
-
-    def _validate
-      value = []
-      result = ::Ippon::Validate::Result.new(value)
-      
-      each_with_index do |entry, idx|
-        element_result = entry.validate
-        value << element_result.value
-        result.add_nested(idx, element_result)
-      end
-      
-      result
-    end
-
-    def add(id = @entries.size.to_s)
-      subkey = key[id]
-      @entries[id] = entry = self.class.element_class.new(subkey)
-    end
-
-    def each(&blk)
-      @entries.each_value(&blk)
-    end
-
-    include Enumerable
-
-    def each_with_id
-      @entries.each do |id, entry|
-        yield entry, key.to_s, id
-      end
-    end
-  end
-
-  class Group < Entry
-    # Re-export common entries
-    Text = Text
-    TextList = TextList
-    Flag = Flag
-    List = List
-    Parametric = Parametric
-
-    def self.fields
-      @fields ||= {}
-    end
-
-    def self.field(name, klass)
-      if fields.has_key?(name)
-        raise "duplicate field #{name.inspect}"
+    class Processor
+      def self.schema_builder
+        @schema_builder ||= Ippon::Validate::Builder
       end
 
-      if method_defined?(name)
-        raise "cannot define field #{name.inspect} because it clashes with a method"
+      class << self; attr_writer :schema_builder; end
+
+      def self.form(name, &blk)
+        if method_defined?(name)
+          raise ArgumentError, "method already exists: ##{name}"
+        end
+
+        form_builder = FormBuilder.new(schema_builder: schema_builder)
+        define_method(name) { |field| form_builder.process(field, self) }
+        form_builder.instance_eval(&blk) if blk
+        form_builder
       end
 
-      fields[name] = klass
-    end
-
-    def self.finalized_fields
-      finalize
-      fields
-    end
-
-    def self.finalize
-      return if defined?(@finalized)
-      @finalized = true
-      fields.freeze
-      fields.each do |name, klass|
-        attr_reader name
+      def initialize(data, key)
+        @data = data
+        @key = key
+        @is_valid = true
       end
-      self
-    end
 
-    def self.validate(&blk)
-      schema = GroupBuilder.instance_eval(&blk)
-      define_method(:_validate) do
-        schema.validate(self)
+      def valid?
+        @is_valid
       end
-    end
 
-    def setup
-      @entries = []
-
-      self.class.finalized_fields.each do |name, klass|
-        ivar = :"@#{name}"
-        entry = klass.new(key[name])
-        instance_variable_set(ivar, entry)
-        @entries << entry
+      def fill(field, from: nil, schema: nil)
+        key = from ? @key[from] : @key
+        field.fill_from_data(@data, key)
+        validate_input(field, schema) if schema
+        field
       end
-    end
 
-    def from_input(input)
-      @entries.each do |entry|
-        entry.from_input(input)
+      def validate(field, schema, value)
+        result = schema.validate(value)
+        field.output = result.value
+        field.error = result_to_error(result)
+        @is_valid = false if result.error?
+        field
       end
-    end
 
-    def serialize(&blk)
-      @entries.each do |entry|
-        entry.serialize(&blk)
+      def validate_input(field, schema)
+        validate(field, schema, field.input)
       end
-    end
 
-    def _validate
-      ::Ippon::Validate::Result.new(self)
-    end
-  end
+      def validate_output(field, schema)
+        validate(field, schema, field.output)
+      end
 
-  module GroupBuilder
-    extend ::Ippon::Validate::Builder
-    module_function
-
-    def field(name)
-      ::Ippon::Validate::Step.new do |result|
-        entry = result.value.send(name)
-        entry.validate
+      def result_to_error(result)
+        result.error_messages
       end
     end
   end
