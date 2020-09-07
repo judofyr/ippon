@@ -133,7 +133,7 @@ module Ippon
 
         schema = blk.call(@schema_builder)
         @post_steps << proc { |field, form_processor|
-          form_processor.validate(field, schema)
+          form_processor.validate_output(field, schema)
         }
         self
       end
