@@ -124,7 +124,9 @@ module Ippon
         raise ArgumentError, "block required" if !blk
 
         @pre_steps << proc { |field, form_processor|
-          blk.call(field.hash(name))
+          form_processor.with_nested(name) do
+            form_processor.instance_exec(field.hash(name), &blk)
+          end
         }
       end
 
@@ -179,6 +181,14 @@ module Ippon
 
       def valid?
         @is_valid
+      end
+
+      def with_nested(name)
+        old_key = @key
+        @key = @key[name]
+        yield
+      ensure
+        @key = old_key
       end
 
       def fill(field, from: nil, schema: nil)
