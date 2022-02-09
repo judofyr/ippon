@@ -125,6 +125,7 @@ require 'set'
 #   the +schema_migrations+ table. This is created for you. Never touch this
 #   table manually.
 #
+# @deprecate Use {Ippon::Migrations} instead.
 class Ippon::Migrator
   # @param db [Sequel::Database]
   def initialize(db)
@@ -245,4 +246,3 @@ class Ippon::Migrator
     @dataset ||= setup_schema
   end
 end
-
